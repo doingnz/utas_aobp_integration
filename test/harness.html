@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AOBP Integration — Test Harness</title>
+<style>
+  :root {
+    --ink: #1c2430;
+    --muted: #5d6b7a;
+    --line: #d8dee6;
+    --ground: #f6f8fa;
+    --panel: #ffffff;
+    --accent: #0b5394;
+    --ok: #2d6a4f;
+    --ok-bg: #d8f3dc;
+    --bad: #b71c1c;
+    --bad-bg: #fdecea;
+    --warn-bg: #fff8e1;
+    --warn-line: #ffe082;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 22px 80px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .07em;
+       color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 0 0 24px; max-width: 70ch; }
+  .grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,420px); gap: 22px; align-items: start; }
+  @media (max-width: 940px) { .grid { grid-template-columns: minmax(0,1fr); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 18px; margin-bottom: 20px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  label { font-weight: 600; font-size: 13px; color: var(--muted); }
+  select, input[type=text] {
+    font: inherit; padding: 7px 9px; border: 1px solid var(--line);
+    border-radius: 6px; background: #fff; color: var(--ink);
+  }
+  button {
+    font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 7px;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button.secondary { background: #fff; color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
+           vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; width: 42%; }
+  td.v { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; word-break: break-all; }
+  td.set { background: #f2fbf5; }
+  .empty { color: #9aa7b4; }
+  pre { background: #0f1720; color: #cfe3f5; padding: 12px; border-radius: 8px;
+        overflow-x: auto; font-size: 12.5px; max-height: 320px; }
+  .note { background: var(--warn-bg); border: 1px solid var(--warn-line);
+          border-radius: 8px; padding: 12px 14px; margin-bottom: 20px; font-size: 14px; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 9px;
+          border-radius: 99px; background: #eef2f6; color: var(--muted); }
+  .pill.ok  { background: var(--ok-bg);  color: var(--ok); }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .checks div { padding: 3px 0; font-size: 13.5px; }
+  .checks .p::before { content: "PASS  "; color: var(--ok);  font-weight: 700; }
+  .checks .f::before { content: "FAIL  "; color: var(--bad); font-weight: 700; }
+  .checks .i::before { content: "INFO  "; color: var(--muted); font-weight: 700; }
+  /* Chart.js owns the canvas size. It must have a container with a height of
+     its own to measure against, and the canvas itself must not be sized in
+     CSS — do both and each resize grows the box the next one measures. */
+  .plot-box { position: relative; height: 260px; width: 100%; }
+  .plot-box > canvas { display: block; }
+  .redcap { border: 2px dashed #b9c6d4; border-radius: 10px; padding: 16px; background: #fbfdff; }
+  .redcap h2 { margin-bottom: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>AOBP Integration — Test Harness</h1>
+  <p class="sub">
+    Runs <code>js/aobp.js</code> exactly as the REDCap survey page runs it, against a real BP+
+    or the SDK simulator. The panel on the left is a stand-in for the
+    <code>aobp_visit</code> instrument: the same element IDs, and one input per REDCap field.
+    Whatever the module writes into those fields is what REDCap would have stored.
+  </p>
+
+  <div class="note">
+    <b>This page is not part of the deployed module.</b> REDCap serves only the module directory;
+    this harness exists so the integration can be exercised without a REDCap development instance.
+    It needs a local web server — <code>python -m http.server 8080</code> from the module folder,
+    then open <code>/test/harness.html</code>. ES modules and Web Serial both refuse to run from
+    <code>file://</code>.
+  </div>
+
+  <div class="row" style="margin-bottom:20px">
+    <label for="transport">Device</label>
+    <select id="transport">
+      <option value="simulator">Simulator — no hardware needed</option>
+      <option value="serial">Real BP+ over serial (Chrome/Edge)</option>
+    </select>
+
+    <label for="simmode">Simulated device mode</label>
+    <select id="simmode">
+      <option value="5">BP+ AOBP</option>
+      <option value="0">BP+ (not AOBP)</option>
+    </select>
+
+    <label for="record">Record</label>
+    <input type="text" id="record" value="TEST-001" size="10">
+
+    <label for="tolerance">Clock tolerance (min)</label>
+    <input type="text" id="tolerance" value="5" size="4">
+
+    <label for="skew">Start device clock</label>
+    <select id="skew">
+      <option value="0">in step with this computer</option>
+      <option value="120">2 minutes fast (inside 5 min)</option>
+      <option value="1800">30 minutes fast (outside 5 min)</option>
+      <option value="-86400">a day slow</option>
+    </select>
+
+    <button id="run-selftest" class="secondary" type="button">Run SDK self-test</button>
+  </div>
+
+  <div class="grid">
+    <div>
+      <!-- ── The REDCap instrument, reproduced ───────────────────────────── -->
+      <div class="card redcap">
+        <h2>Stand-in for the aobp_visit instrument</h2>
+
+        <div id="status-display" style="margin-bottom:14px"></div>
+
+        <div class="row" style="margin-bottom:14px">
+          <button id="connect-bp-btn" type="button">Connect BP+</button>
+          <button id="start-seated-btn" type="button">Start seated</button>
+          <button id="start-standing-btn" type="button">Start standing</button>
+        </div>
+
+        <div class="row" style="margin-bottom:6px">
+          <label for="sys_standing_required">sys_standing_required</label>
+          <select id="sys_standing_required" name="sys_standing_required">
+            <option value="1">1 — standing measurement required</option>
+            <option value="0">0 — seated only</option>
+          </select>
+        </div>
+
+        <div id="seated-results-panel"></div>
+        <div id="standing-results-panel"></div>
+      </div>
+
+      <div class="card">
+        <h2>Raw cuff pressure <span id="plot-note" class="pill">no measurement yet</span></h2>
+        <div class="plot-box"><canvas id="cuff-plot"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h2>Serial trace</h2>
+        <pre id="trace">(nothing yet)</pre>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Conformance checks</h2>
+        <div id="checks" class="checks"><div class="i">Run a measurement to populate.</div></div>
+      </div>
+
+      <div class="card">
+        <h2>REDCap fields as they would be saved</h2>
+        <table id="fields"><tbody></tbody></table>
+      </div>
+
+      <div class="card">
+        <h2>Self-test</h2>
+        <pre id="selftest">(not run)</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- The REDCap radio buttons the module clicks. Hidden: the harness only needs
+     them to exist so setRadio() has something to find. -->
+<div style="display:none">
+  <input type="radio" id="opt-seated_af_0"   name="seated_af"   value="0">
+  <input type="radio" id="opt-seated_af_1"   name="seated_af"   value="1">
+  <input type="radio" id="opt-standing_af_0" name="standing_af" value="0">
+  <input type="radio" id="opt-standing_af_1" name="standing_af" value="1">
+</div>
+
+<script src="./chart.umd.min.js"></script>
+<script>
+// ── The fields the module writes, created before aobp.js loads ─────────────
+const TEXT_FIELDS = [
+  'sys_measurement_status',
+  'seated_ave_sys','seated_ave_dia','seated_ave_hr','seated_datetime',
+  'seated_guid','seated_bpplus_device_id','seated_raw_xml_text',
+  'standing_ave_sys','standing_ave_dia','standing_ave_hr','standing_datetime',
+  'standing_guid','standing_bpplus_device_id','standing_raw_xml_text',
+];
+
+const hidden = document.createElement('div');
+hidden.style.display = 'none';
+for (const name of TEXT_FIELDS) {
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = name;
+  hidden.appendChild(input);
+}
+document.body.appendChild(hidden);
+
+// ── Stand in for what AobpIntegration.php emits ────────────────────────────
+window.AOBP_CONFIG = {
+  record: document.getElementById('record').value,
+  event_id: '1',
+  repeat_instance: '1',
+  pid: '0',
+  sdkUrl: new URL('../sdk/index.js', location.href).href,
+  saveXmlAsFile: false,          // no server here to receive it
+  clockToleranceMinutes: 5,
+  trace: true,
+};
+document.getElementById('tolerance').addEventListener('input', function () {
+  window.AOBP_CONFIG.clockToleranceMinutes = Number(this.value);
+});
+document.getElementById('record').addEventListener('input', function () {
+  window.AOBP_CONFIG.record = this.value;
+});
+</script>
+
+<script src="../js/aobp.js"></script>
+
+<script type="module">
+import * as sdk from '../sdk/index.js';
+
+const $ = id => document.getElementById(id);
+
+// ── Make the module use the transport chosen here ──────────────────────────
+// A module namespace is sealed, so the transport cannot be swapped from out
+// here. aobp.js instead offers one hook for exactly this purpose; everything
+// else it does — connect, readFeatures, measure — is the code the survey runs.
+window.AOBP_TRANSPORT = function (api) {
+  if ($('transport').value === 'serial') {
+    return new api.WebSerialTransport({ filters: [{ usbVendorId: 0x067B }] });
+  }
+  const transport = new api.SimulatorTransport({
+    measureMode: Number($('simmode').value),
+    tickMs: 12,
+  });
+
+  // Start the simulated device's clock deliberately wrong, so the sync that
+  // happens before a measurement is something that can be watched rather than
+  // taken on trust.
+  const skewSeconds = Number($('skew').value);
+  if (skewSeconds) transport._clockOffsetMs = skewSeconds * 1000;
+
+  return transport;
+};
+
+// ── Trace ──────────────────────────────────────────────────────────────────
+const traceLines = [];
+function watchDevice() {
+  const device = window.AOBP && window.AOBP.device;
+  if (!device || device.__watched) return;
+  device.__watched = true;
+  device.on('log', e => {
+    traceLines.push((e.dir === 'tx' ? '> ' : '< ') + e.text);
+    if (traceLines.length > 400) traceLines.shift();
+    const pre = $('trace');
+    pre.textContent = traceLines.join('\n');
+    pre.scrollTop = pre.scrollHeight;
+  });
+}
+setInterval(watchDevice, 400);
+
+// ── Show the fields, and check the result ──────────────────────────────────
+function renderFields() {
+  const rows = [];
+  const radios = ['seated_af', 'standing_af'];
+
+  for (const name of TEXT_FIELDS) {
+    const el = document.querySelector(`[name="${name}"]`);
+    let v = el ? el.value : '';
+    if (name.endsWith('_raw_xml_text') && v) v = `(${v.length} characters of XML)`;
+    rows.push([name, v]);
+  }
+  for (const name of radios) {
+    const picked = document.querySelector(`[name="${name}"]:checked`);
+    rows.push([name, picked ? picked.value : '']);
+  }
+
+  $('fields').querySelector('tbody').innerHTML = rows.map(([k, v]) =>
+    `<tr><th>${k}</th><td class="v ${v ? 'set' : ''}">${
+      v ? String(v).replace(/[<&]/g, c => ({'<':'&lt;','&':'&amp;'}[c])) : '<span class="empty">(empty)</span>'
+    }</td></tr>`).join('');
+}
+
+const checks = [];
+const esc = v => String(v === null || v === undefined ? '' : v)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function check(pass, text, detail) {
+  checks.push({ pass, text, detail });
+  $('checks').innerHTML = checks.map(c =>
+    `<div class="${c.pass === null ? 'i' : c.pass ? 'p' : 'f'}">${esc(c.text)}${
+      c.detail ? ` <span style="color:#7b8794">— ${esc(c.detail)}</span>` : ''
+    }</div>`).join('');
+}
+
+/**
+ * The questions worth asking of a measurement that the module cannot ask of
+ * itself: did the numbers survive the round trip into the REDCap fields, and
+ * is what the device sent internally consistent.
+ */
+function verify(mode, measurement) {
+  checks.length = 0;
+  const f = window.AOBP.FIELD_NAMES[mode];
+  const val = n => (document.querySelector(`[name="${n}"]`) || {}).value || '';
+  const bp = measurement.brachial;
+
+  check(measurement.crcOk, 'Block checksum matched',
+    measurement.crcOk ? '' : 'the XML arrived corrupted');
+  check(!!measurement.rootName, 'XML parsed', `<${measurement.rootName} version="${measurement.version}">`);
+
+  check(String(bp.sys) === val(f.sys) && String(bp.dia) === val(f.dia),
+    'Systolic and diastolic reached the REDCap fields', `${val(f.sys)}/${val(f.dia)}`);
+  check(String(bp.pr) === val(f.hr), 'Heart rate reached its field', val(f.hr));
+  check(val(f.guid) !== '', 'GUID captured', val(f.guid));
+  check(val(f.device_id) !== '', 'Device ID captured', val(f.device_id));
+  check(val(f.datetime) !== '', 'Timestamp captured', val(f.datetime));
+
+  const picked = document.querySelector(`[name="${f.af}"]:checked`);
+  const rhythm = measurement.rhythm;
+  check(!rhythm.known || (picked && picked.value === (rhythm.irregular ? '1' : '0')),
+    'Irregular-rhythm radio matches sPRV',
+    rhythm.known ? `sPRV ${rhythm.sPRV} ms -> ${picked ? picked.value : 'nothing selected'}` : 'not reported');
+
+  // The point of the whole integration: a seated and a standing visit must be
+  // distinguishable in the stored file.
+  const position = measurement.protocol.bodyPosition;
+  const aobpDevice = window.AOBP.features &&
+    window.AOBP.features.measureMode === sdk.MeasureMode.bpPlusAobp;
+  check(aobpDevice ? position === mode : null,
+    aobpDevice
+      ? 'Device recorded the body position it was asked for'
+      : 'Body position not recorded — the device is not in AOBP mode',
+    position ? `bodyPosition="${position}"` : 'absent from the XML');
+
+  const n = measurement.readings.length;
+  check(null, `Readings in this result: ${n === 0 ? '1 (single measurement)' : n}`,
+    n ? measurement.readings.map(r => `${r.sys}/${r.dia}`).join(', ') : '');
+
+  const q = measurement.signalQuality;
+  check(q.known ? q.usable : null,
+    q.known ? `Signal quality ${q.label} (SNR ${q.snr})` : 'Signal quality not reported',
+    q.known && !q.usable ? 'below Acceptable — repeat the measurement' : '');
+
+  const clock = window.AOBP.lastClockSync;
+  if (clock) {
+    const drift = clock.driftMs === null ? null : Math.round(clock.driftMs / 1000);
+    check(clock.synced ? null : true,
+      clock.synced
+        ? `Device clock was set from this computer${drift === null ? '' : ` (was out by ${drift} s)`}`
+        : `Device clock left alone${drift === null ? '' : ` (out by ${drift} s, within tolerance)`}`,
+      clock.before ? `device read ${clock.before}` : clock.reason);
+  }
+
+  const xmlLen = (measurement.xml || '').length;
+  check(xmlLen < 60000,
+    `Raw XML is ${xmlLen.toLocaleString()} characters`,
+    xmlLen >= 60000 ? 'too large for a REDCap text field — store it as a file' : '');
+
+  plotCuff(measurement);
+}
+
+// ── Cuff trace, which proves the XML decoded rather than merely parsed ─────
+let chart = null;
+function plotCuff(measurement) {
+  const rec = measurement.cuffRecording(0);
+  const note = $('plot-note');
+
+  if (!rec.found) {
+    note.className = 'pill bad';
+    note.textContent = rec.reason;
+    if (chart) { chart.destroy(); chart = null; }
+    return;
+  }
+
+  const step = Math.max(1, Math.floor(rec.mmHg.length / 1500));
+  const points = [];
+  for (let i = 0; i < rec.mmHg.length; i += step) {
+    points.push({ x: i / rec.sampleRate, y: rec.mmHg[i] });
+  }
+
+  note.className = 'pill ok';
+  note.textContent = `${rec.mmHg.length.toLocaleString()} samples @ ${rec.sampleRate} Hz`;
+
+  if (chart) chart.destroy();
+  chart = new Chart($('cuff-plot'), {
+    type: 'line',
+    data: { datasets: [{ data: points, borderColor: '#0b5394', borderWidth: 1.2,
+                         pointRadius: 0, tension: 0 }] },
+    options: {
+      animation: false, parsing: false,
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'Time (s)' } },
+        y: { title: { display: true, text: 'Pressure (mmHg)' } },
+      },
+    },
+  });
+}
+
+// ── Verify each measurement the module announces ───────────────────────────
+// The module dispatches this once the REDCap fields are filled, so what the
+// checks read is the record as it would be saved.
+document.addEventListener('aobp:measurement', function (event) {
+  renderFields();
+  verify(event.detail.mode, event.detail.measurement);
+});
+
+renderFields();
+
+// ── SDK self-test ──────────────────────────────────────────────────────────
+$('run-selftest').addEventListener('click', async () => {
+  const out = $('selftest');
+  out.textContent = 'running…';
+  try {
+    const { run } = await import('../sdk/selftest.js');
+    const r = await run();
+      out.textContent = `${r.passed}/${r.total} passed, ${r.failed} failed`
+        + (r.failed ? String.fromCharCode(10,10) + r.lines.filter(x => x.startsWith('FAIL')).join(String.fromCharCode(10)) : '');
+  } catch (error) {
+    out.textContent = 'could not run: ' + error.message;
+  }
+});
+</script>
+</body>
+</html>

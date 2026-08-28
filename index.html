@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>AOBP Integration — test site</title>
+<style>
+  :root { --ink:#1c2430; --muted:#5d6b7a; --line:#d8dee6; --ground:#f6f8fa;
+          --accent:#0b5394; --warn-bg:#fff8e1; --warn-line:#ffe082; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+         font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:40px 22px 80px; }
+  h1 { font-size:26px; margin:0 0 6px; letter-spacing:-0.01em; }
+  p.sub { color:var(--muted); margin:0 0 28px; }
+  a.go { display:block; background:#fff; border:1px solid var(--line);
+         border-left:4px solid var(--accent); border-radius:10px;
+         padding:18px 20px; margin-bottom:14px; text-decoration:none; color:inherit; }
+  a.go b { display:block; color:var(--accent); font-size:18px; margin-bottom:3px; }
+  a.go span { color:var(--muted); font-size:14.5px; }
+  .note { background:var(--warn-bg); border:1px solid var(--warn-line);
+          border-radius:8px; padding:14px 16px; font-size:14.5px; margin-top:26px; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:.92em; }
+  #env { margin-top:22px; font-size:14.5px; color:var(--muted); }
+  #env b { color:var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>AOBP Integration — test site</h1>
+  <p class="sub">
+    The REDCap module's page code, running outside REDCap so it can be tested
+    against a real BP+.
+  </p>
+
+  <a class="go" href="test/harness.html">
+    <b>Open the test harness →</b>
+    <span>Connect a BP+, take a measurement, and see the REDCap fields it fills.</span>
+  </a>
+
+  <div id="env">checking this browser…</div>
+
+  <div class="note">
+    Not for participant data. This is a bench tool: it fills a copy of the REDCap
+    fields on the page and sends nothing anywhere.
+  </div>
+
+</div>
+
+<script type="module">
+  import { recommendedTransport } from './sdk/index.js';
+
+  const pick = recommendedTransport();
+  const env = pick.environment;
+  const yes = v => v ? 'yes' : 'no';
+
+  document.getElementById('env').innerHTML =
+    `<b>This browser:</b> Web Serial ${yes(env.webSerial)} · ` +
+    `WebUSB ${yes(env.webUsb)} · Bluetooth ${yes(env.webBluetooth)}` +
+    `${env.android ? ' · Android' : ''}` +
+    `${env.secureContext ? '' : ' · <b>not a secure context</b>'}` +
+    `<br><b>Would connect over:</b> ${pick.kind || 'nothing available'} — ${pick.reason}`;
+</script>
+</body>
+</html>

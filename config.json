@@ -1,0 +1,43 @@
+{
+  "name": "AOBP Integration",
+  "namespace": "AobpIntegration",
+  "description": "Records an AOBP blood pressure measurement from a Uscom BP+ device directly into a REDCap survey, using the BP+ JavaScript SDK.",
+  "version": "1.0.0",
+  "framework-version": 15,
+  "authors": [
+    {
+      "name": "Richard Scott",
+      "institution": "Uscom Ltd"
+    }
+  ],
+  "project-settings": [
+    {
+      "key": "aobp-instrument",
+      "name": "Instrument that carries the AOBP controls",
+      "type": "text",
+      "required": false
+    },
+    {
+      "key": "aobp-info-instrument",
+      "name": "Instrument that uses the collapsible information panels",
+      "type": "text",
+      "required": false
+    },
+    {
+      "key": "aobp-clock-tolerance-minutes",
+      "name": "Set the device clock from this computer when it is out by more than this many minutes (blank = 5)",
+      "type": "text",
+      "required": false
+    },
+    {
+      "key": "aobp-save-xml-file",
+      "name": "Store the raw measurement XML as a file on the record (needs seated_raw_xml / standing_raw_xml file-upload fields)",
+      "type": "checkbox"
+    },
+    {
+      "key": "aobp-trace",
+      "name": "Log every serial line to the browser console (troubleshooting only)",
+      "type": "checkbox"
+    }
+  ]
+}
