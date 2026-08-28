@@ -77,6 +77,18 @@
 <div class="wrap">
 
   <h1>AOBP Integration — Test Harness</h1>
+
+  <!-- Version banner. The point of this is a tablet: a refresh that quietly
+       served a cached copy is indistinguishable from a fix that did not work,
+       and that ambiguity has already cost a debugging round. Bump BUILD below
+       on every upload, and check the banner before trusting any result. -->
+  <div id="build-banner" style="background:#0b5394;color:#fff;border-radius:8px;
+       padding:10px 14px;margin-bottom:16px;font:600 15px/1.45 ui-monospace,
+       Consolas,monospace">loading…</div>
+
+  <div id="env-banner" style="background:#f1f5f9;border:1px solid #d8dee6;
+       border-radius:8px;padding:10px 14px;margin-bottom:16px;
+       font:14px/1.5 ui-monospace,Consolas,monospace">checking…</div>
   <p class="sub">
     Runs <code>js/aobp.js</code> exactly as the REDCap survey page runs it, against a real BP+
     or the SDK simulator. The panel on the left is a stand-in for the
@@ -87,17 +99,20 @@
   <div class="note">
     <b>This page is not part of the deployed module.</b> REDCap serves only the module directory;
     this harness exists so the integration can be exercised without a REDCap development instance.
-    It needs a local web server — <code>python -m http.server 8080</code> from the module folder,
-    then open <code>/test/harness.html</code>. ES modules and Web Serial both refuse to run from
-    <code>file://</code>.
   </div>
 
   <div class="row" style="margin-bottom:20px">
     <label for="transport">Device</label>
     <select id="transport">
-      <option value="simulator">Simulator — no hardware needed</option>
-      <option value="serial">Real BP+ over serial (Chrome/Edge)</option>
+      <option value="auto">auto (what REDCap would choose)</option>
+      <option value="serial-all">WebSerial, every port</option>
+      <option value="serial">WebSerial, Prolific filter (known to fail on Android)</option>
+      <option value="usb">WebUSB + PL2303 driver</option>
     </select>
+
+    <label for="use-simulator" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="checkbox" id="use-simulator"> Use simulator
+    </label>
 
     <label for="simmode">Simulated device mode</label>
     <select id="simmode">
@@ -108,18 +123,24 @@
     <label for="record">Record</label>
     <input type="text" id="record" value="TEST-001" size="10">
 
-    <label for="tolerance">Clock tolerance (min)</label>
-    <input type="text" id="tolerance" value="5" size="4">
+    <!-- Outside the instrument stand-in on purpose. This value is not something
+         the AOBP operator sets: it arrives already decided, from screening on
+         another instrument. Modelled here as a hidden field the module reads,
+         which is what a value carried between instruments looks like — see the
+         open question to Oliver about its real field type. -->
+    <label for="standing-required-cb" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="checkbox" id="standing-required-cb"> sys_standing_required
+    </label>
+    <input type="hidden" name="sys_standing_required" id="sys_standing_required" value="0">
 
-    <label for="skew">Start device clock</label>
-    <select id="skew">
-      <option value="0">in step with this computer</option>
-      <option value="120">2 minutes fast (inside 5 min)</option>
-      <option value="1800">30 minutes fast (outside 5 min)</option>
-      <option value="-86400">a day slow</option>
-    </select>
+    <!-- Defaults ON so the harness out of the box behaves the way
+         aobp_integration_v1.0.1 does: standing follows seated on a timer. The
+         module's own default is OFF, so this is the harness deliberately opting
+         into the original behaviour rather than the module's. -->
+    <label for="auto-advance-cb" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="checkbox" id="auto-advance-cb" checked> Auto advance
+    </label>
 
-    <button id="run-selftest" class="secondary" type="button">Run SDK self-test</button>
   </div>
 
   <div class="grid">
@@ -134,18 +155,35 @@
           <button id="connect-bp-btn" type="button">Connect BP+</button>
           <button id="start-seated-btn" type="button">Start seated</button>
           <button id="start-standing-btn" type="button">Start standing</button>
-        </div>
-
-        <div class="row" style="margin-bottom:6px">
-          <label for="sys_standing_required">sys_standing_required</label>
-          <select id="sys_standing_required" name="sys_standing_required">
-            <option value="1">1 — standing measurement required</option>
-            <option value="0">0 — seated only</option>
-          </select>
+          <button id="cancel-bp-btn" type="button"
+                  style="background:#b71c1c;border-color:#b71c1c">Cancel</button>
+          <button id="set-aobp-mode-btn" type="button" class="secondary">Set AOBP mode</button>
         </div>
 
         <div id="seated-results-panel"></div>
         <div id="standing-results-panel"></div>
+      </div>
+
+      <!-- Harness controls: things that exercise the code, not parameters of a
+           measurement. Outside the stand-in because none of them exist on the
+           REDCap instrument. -->
+      <div class="card">
+        <h2>Harness controls</h2>
+        <div class="row">
+          <label for="tolerance">Clock tolerance (min)</label>
+          <input type="text" id="tolerance" value="5" size="4">
+
+          <label for="skew">Simulate device clock</label>
+          <select id="skew">
+            <option value="0">in step with this computer</option>
+            <option value="120">2 minutes fast (inside 5 min)</option>
+            <option value="1800">30 minutes fast (outside 5 min)</option>
+            <option value="-86400">a day slow</option>
+          </select>
+
+          <button id="run-selftest" class="secondary" type="button">Run SDK self-test</button>
+          <button id="run-usbdiag" class="secondary" type="button">USB diagnostics</button>
+        </div>
       </div>
 
       <div class="card">
@@ -173,6 +211,11 @@
       <div class="card">
         <h2>Self-test</h2>
         <pre id="selftest">(not run)</pre>
+      </div>
+
+      <div class="card">
+        <h2>USB diagnostics</h2>
+        <pre id="usbdiag">(not run)</pre>
       </div>
     </div>
   </div>
@@ -214,10 +257,12 @@ window.AOBP_CONFIG = {
   event_id: '1',
   repeat_instance: '1',
   pid: '0',
-  sdkUrl: new URL('../sdk/index.js', location.href).href,
+  sdkUrl: new URL('../sdk/index.js?v=1.1.1', location.href).href,
   saveXmlAsFile: false,          // no server here to receive it
   clockToleranceMinutes: 5,
   trace: true,
+  autoAdvanceStanding: true,   // matches v1.0.1; the module's own default is false
+  autoAdvanceSeconds: 3,
 };
 document.getElementById('tolerance').addEventListener('input', function () {
   window.AOBP_CONFIG.clockToleranceMinutes = Number(this.value);
@@ -227,21 +272,111 @@ document.getElementById('record').addEventListener('input', function () {
 });
 </script>
 
-<script src="../js/aobp.js"></script>
+<!-- ?v= must match BUILD in the module script below. A query string is the only
+     reliable way to force a tablet past a cached copy of the module. -->
+<script src="../js/aobp.js?v=1.1.1"></script>
 
 <script type="module">
 import * as sdk from '../sdk/index.js';
 
 const $ = id => document.getElementById(id);
 
+// ── Build stamp ────────────────────────────────────────────────────────────
+// Bump this on every upload, and keep the ?v= on the aobp.js script tag and on
+// AOBP_CONFIG.sdkUrl in step with it.
+const BUILD = '1.1.1';
+const BUILT = '2026-08-29';
+
+(function showBuild() {
+  const el = $('build-banner');
+  el.textContent = `harness build ${BUILD} · ${BUILT}`;
+  console.log(`[AOBP harness] build ${BUILD} (${BUILT})`);
+
+  // window.AOBP is set when the module initialises, which happens after this
+  // module script's top level runs — so the check waits rather than warning
+  // about a module that simply has not started yet.
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      if (!window.AOBP) {
+        el.style.background = '#b3261e';
+        el.textContent += '  ·  WARNING: aobp.js did not initialise';
+      }
+    }, 300);
+  });
+})();
+
+// ── Environment, shown without needing a button ────────────────────────────
+(function showEnv() {
+  const env = sdk.describeEnvironment();
+  const pick = sdk.recommendedTransport(env);
+  const yn = v => v ? 'yes' : 'no';
+  const d = navigator.userAgentData;
+
+  // Every flag below is the SDK's own. The raw signals are shown underneath so
+  // that when a device disagrees with the SDK, the reading that explains it is
+  // already on screen — that is reporting, not a second opinion.
+  $('env-banner').innerHTML =
+    `WebSerial <b>${yn(env.webSerial)}</b> · WebUSB <b>${yn(env.webUsb)}</b> · ` +
+    `Bluetooth <b>${yn(env.webBluetooth)}</b> · secure context <b>${yn(env.secureContext)}</b><br>` +
+    `android <b>${yn(env.android)}</b> · handheld <b>${yn(env.handheld)}</b> · ` +
+    `mobile <b>${yn(env.mobile)}</b><br>` +
+    `<span style="color:#5d6b7a">uaData.platform ` +
+    `<b>${d && d.platform !== undefined ? d.platform : 'n/a'}</b> · ` +
+    `uaData.mobile <b>${d && d.mobile !== undefined ? d.mobile : 'n/a'}</b> · ` +
+    `maxTouchPoints <b>${navigator.maxTouchPoints}</b> · ` +
+    `pointer:fine <b>${typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches}</b>` +
+    `</span><br>` +
+    `<b>auto will use: ${pick.kind || 'nothing available'}</b> — ${pick.reason}`;
+})();
+
 // ── Make the module use the transport chosen here ──────────────────────────
 // A module namespace is sealed, so the transport cannot be swapped from out
 // here. aobp.js instead offers one hook for exactly this purpose; everything
 // else it does — connect, readFeatures, measure — is the code the survey runs.
 window.AOBP_TRANSPORT = function (api) {
-  if ($('transport').value === 'serial') {
+  // The simulator is a checkbox rather than an entry in the Device list,
+  // because it is not a way of reaching a device — it replaces the device. The
+  // list then means one thing only: how the cable is opened.
+  if ($('use-simulator').checked) return makeSimulator(api);
+
+  const choice = $('transport').value;
+
+  // WebSerial with no filters lists every port the OS has enumerated. This is
+  // the one that answers "is the cable there at all?" — a filtered picker that
+  // says "No compatible device found" cannot distinguish a missing cable from a
+  // cable whose chip simply is not Prolific.
+  if (choice === 'serial-all') {
+    return new api.WebSerialTransport();
+  }
+
+  if (choice === 'serial') {
     return new api.WebSerialTransport({ filters: [{ usbVendorId: 0x067B }] });
   }
+
+  // WebUSB, driving the PL2303 directly. On Android this is the only route,
+  // because there is no WebSerial. On Windows it works only if the adapter is
+  // NOT already claimed by the Prolific COM driver — see the note in the
+  // diagnostics output.
+  if (choice === 'usb') {
+    return new api.UsbSerialTransport({ offerAllDrivers: true });
+  }
+
+  // 'auto'. No local policy here: the SDK decides, and the point of this
+  // option is to exercise that decision rather than a copy of it.
+  const pick = api.recommendedTransport();
+  console.log('[AOBP] auto transport: ' + pick.kind + ' — ' + pick.reason);
+
+  if (pick.kind === api.TransportKind.serial) {
+    // Unfiltered, matching PORT_FILTERS in aobp.js.
+    return new api.WebSerialTransport();
+  }
+  if (pick.kind === api.TransportKind.usbSerial) {
+    return new api.UsbSerialTransport();
+  }
+  throw new Error('This browser cannot reach a BP+ on a cable. ' + pick.reason);
+};
+
+function makeSimulator(api) {
   const transport = new api.SimulatorTransport({
     measureMode: Number($('simmode').value),
     tickMs: 12,
@@ -254,7 +389,34 @@ window.AOBP_TRANSPORT = function (api) {
   if (skewSeconds) transport._clockOffsetMs = skewSeconds * 1000;
 
   return transport;
-};
+}
+
+// ── Which controls are live ────────────────────────────────────────────────
+// The two halves are mutually exclusive, so the inactive half is greyed rather
+// than left looking as though it still applies.
+function syncTransportUi() {
+  const simulated = $('use-simulator').checked;
+  $('transport').disabled = simulated;
+  $('simmode').disabled   = !simulated;
+  $('skew').disabled      = !simulated;
+  $('env-banner').style.opacity = simulated ? '.5' : '1';
+}
+$('use-simulator').addEventListener('change', syncTransportUi);
+syncTransportUi();
+
+// ── sys_standing_required ──────────────────────────────────────────────────
+// A checkbox's .value is its value attribute whether or not it is checked, so
+// the checkbox drives a hidden field rather than being read directly. The
+// module reads that field with .value, exactly as it would in REDCap.
+$('auto-advance-cb').addEventListener('change', function () {
+  window.AOBP_CONFIG.autoAdvanceStanding = this.checked;
+  console.log('[harness] autoAdvanceStanding = ' + this.checked);
+});
+
+$('standing-required-cb').addEventListener('change', function () {
+  $('sys_standing_required').value = this.checked ? '1' : '0';
+  console.log('[harness] sys_standing_required = ' + $('sys_standing_required').value);
+});
 
 // ── Trace ──────────────────────────────────────────────────────────────────
 const traceLines = [];
@@ -433,6 +595,79 @@ $('run-selftest').addEventListener('click', async () => {
   } catch (error) {
     out.textContent = 'could not run: ' + error.message;
   }
+});
+
+// ── USB diagnostics ────────────────────────────────────────────────────────
+// What the browser can see WITHOUT a picker: ports and devices already granted
+// to this origin. The picker itself cannot be enumerated, so the way to make a
+// cable visible here is to select it once in a picker; after that it persists.
+const hex4 = n => '0x' + Number(n).toString(16).toUpperCase().padStart(4, '0');
+
+$('run-usbdiag').addEventListener('click', async () => {
+  const out = $('usbdiag');
+  out.textContent = 'checking…';
+  const L = [];
+
+  const env = sdk.describeEnvironment();
+  L.push('Environment');
+  L.push(`  WebSerial ${env.webSerial ? 'yes' : 'no'} · WebUSB ${env.webUsb ? 'yes' : 'no'}`
+       + ` · Bluetooth ${env.webBluetooth ? 'yes' : 'no'}`);
+  L.push(`  Android ${env.android ? 'yes' : 'no'} · mobile ${env.mobile ? 'yes' : 'no'}`
+       + ` · secure context ${env.secureContext ? 'yes' : 'no'}`);
+  const pick = sdk.recommendedTransport(env);
+  L.push(`  auto would pick: ${pick.kind || 'nothing'} — ${pick.reason}`);
+  L.push('');
+
+  // WebSerial: ports this origin has already been granted.
+  L.push('WebSerial ports already granted to this page');
+  if (!env.webSerial) {
+    L.push('  (no navigator.serial in this browser)');
+  } else {
+    try {
+      const ports = await navigator.serial.getPorts();
+      if (!ports.length) {
+        L.push('  none yet — pick one with "WebSerial, every port" to list it here');
+      }
+      ports.forEach((p, i) => {
+        const info = p.getInfo ? p.getInfo() : {};
+        const vid = info.usbVendorId, pid = info.usbProductId;
+        L.push(`  [${i}] vendor ${vid === undefined ? 'n/a' : hex4(vid)}`
+             + ` product ${pid === undefined ? 'n/a' : hex4(pid)}`
+             + (vid === 0x067B ? '   <- Prolific, matches the filter' : ''));
+      });
+    } catch (e) { L.push('  error: ' + e.message); }
+  }
+  L.push('');
+
+  // WebUSB: devices this origin has already been granted.
+  L.push('WebUSB devices already granted to this page');
+  if (!env.webUsb) {
+    L.push('  (no navigator.usb in this browser)');
+  } else {
+    try {
+      const devices = await navigator.usb.getDevices();
+      if (!devices.length) {
+        L.push('  none yet — pick one with "WebUSB + PL2303 driver" to list it here');
+      }
+      devices.forEach((d, i) => {
+        L.push(`  [${i}] ${hex4(d.vendorId)}:${hex4(d.productId)}`
+             + `  ${d.manufacturerName || '?'} / ${d.productName || '?'}`);
+      });
+    } catch (e) { L.push('  error: ' + e.message); }
+  }
+  L.push('');
+
+  L.push('What the SDK can drive over WebUSB');
+  sdk.allUsbSerialFilters().forEach(f => {
+    L.push(`  ${hex4(f.vendorId)}:${f.productId === undefined ? '****' : hex4(f.productId)}`);
+  });
+  L.push('');
+  L.push('Note: on Windows, WebUSB can only claim an adapter that is NOT bound');
+  L.push('to the Prolific COM driver. If Windows gives the cable a COM port,');
+  L.push('WebSerial is the route that will work and WebUSB will fail to claim');
+  L.push('the interface. On Android the reverse is true.');
+
+  out.textContent = L.join(String.fromCharCode(10));
 });
 </script>
 </body>

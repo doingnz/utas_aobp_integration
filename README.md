@@ -35,14 +35,64 @@ Desktop and Android tablets both work, by different routes:
 
 | | How the cable is reached |
 |---|---|
-| Desktop Chrome / Edge | Web Serial |
-| Android Chrome | WebUSB — Android has no Web Serial |
+| Desktop Chrome / Edge | WebSerial |
+| Android Chrome | **WebUSB**, always — see below |
 
-The module asks the SDK which is available and uses it, so the operator sees the
-same buttons either way. One consequence on Android: the cable must be a
-**Prolific PL2303**, because WebUSB drives the adapter chip directly and that is
-the driver the SDK ships. On desktop the operating system supplies the driver, so
-any adapter works.
+### Android and WebSerial — read before changing the transport logic
+
+Chrome 151 on Android reports `navigator.serial`, so feature detection alone
+concludes WebSerial is available. It is, but **its port list is not the USB
+cable.** It enumerates Bluetooth SPP devices. Measured on Chrome
+`151.0.7922.173`, same build on both:
+
+| Device | WebSerial picker shows | Works over |
+|---|---|---|
+| Galaxy S23 Ultra | paired Bluetooth devices — car kits, headsets — no cable | WebUSB only |
+| Galaxy Tab S10 FE | the cable, but with no USB vendor id | WebUSB, and unfiltered WebSerial |
+
+Two consequences, both already handled — the first in the SDK, the second in
+`js/aobp.js`:
+
+1. **On Android the cable goes through WebUSB**, whatever WebSerial claims.
+   `recommendedTransport()` in `sdk/transports/detect.js` checks Android before
+   WebSerial rather than after it. The SDK's older rule — WebSerial if the
+   browser has it — predates Android having it at all, and the devices above
+   disproved it.
+
+   The Android flag itself had to be fixed to make that work. `isAndroid()`
+   returned on `userAgentData.platform` and never reached its own UA-string
+   fallback, so Chrome's **"Desktop site"** mode — the default on some Samsung
+   tablets, and which reports `platform: "Linux"` — made both devices claim to
+   be desktops. Every check is now positive-only, and `describeEnvironment()`
+   also exposes `handheld`: a touch screen with no fine pointer, which is what
+   survives desktop-site mode.
+
+   | Chrome mode | `uaData.platform` | `uaData.mobile` | `android` | `handheld` |
+   |---|---|---|---|---|
+   | Desktop site on | `Linux` | `false` | yes, via touch | **yes** |
+   | Desktop site off | `Android` | `false` | yes | **yes** |
+
+   `uaData.mobile` is `false` in both rows and is *not* a bug: UA-CH `mobile`
+   means phone-shaped, and a tablet is correctly not mobile. Any rule built on it
+   fails on the exact device that has to work, which is why the last resort is
+   the touch test — and why a touch laptop, reporting a fine pointer as well,
+   correctly stays on WebSerial.
+
+   `js/aobp.js` carries no platform logic of its own. It calls
+   `recommendedTransport()` and follows the answer.
+
+2. **`PORT_FILTERS` is `null`.** A `requestPort()` filter on the Prolific vendor
+   id matches nothing on Android even with a genuine PL2303GT
+   (`0x067B:0x23A3`) attached and working, because the ports on offer are not
+   USB ports and carry no USB ids. The picker reports "No compatible device
+   found", which reads as a broken cable. Do not "tighten" this.
+
+Because WebUSB drives the adapter chip directly, the cable on Android must be a
+**Prolific PL2303** — that is the only driver the SDK ships. On desktop the
+operating system supplies the driver, so any adapter works.
+
+The operator sees the same buttons either way; only the picker behind **Connect
+BP+** differs — a port list on desktop, a USB device list on a tablet.
 
 ---
 
@@ -77,6 +127,7 @@ The module looks for these elements on the AOBP instrument:
 | `#connect-bp-btn` | Opens the browser's serial port picker |
 | `#start-seated-btn` | Seated measurement |
 | `#start-standing-btn` | Standing measurement |
+| `#cancel-bp-btn` | Optional. Cancels the measurement in progress |
 | `#status-display` | The single large status line |
 | `#seated-results-panel` | Filled after the seated measurement |
 | `#standing-results-panel` | Filled after the standing measurement |
@@ -107,6 +158,13 @@ records the choice.
 Connect, then **Start seated**. If `sys_standing_required` is `1` the module
 stops and asks for the participant to be stood up; **Start standing** takes the
 second measurement when the operator is ready. Nothing runs on a timer.
+
+If the instrument carries a `#cancel-bp-btn`, it is live only while the cuff is
+inflating and stops the measurement at the device — `c` is the one command the
+BP+ accepts mid-measurement. The measurement then fails the way any other device
+failure does, the status line says so, and the buttons re-enable so it can be
+repeated. The element is optional: without it the module behaves exactly as
+before.
 
 ---
 
@@ -248,7 +306,9 @@ the simulator. REDCap never sets it.
 The device APIs need a secure context, so a tablet cannot use a plain
 `http://192.168.x.x` address. `index.html` and `web.config` let this folder be
 served straight from an HTTPS web root: the landing page reports what the browser
-can do — on Android it should read `Web Serial no · WebUSB yes · Android` — and
+can do — on both Galaxy devices tested it reads `WebSerial yes · WebUSB yes ·
+Bluetooth yes · Android`, and the WebSerial "yes" is the misleading one
+described above — and
 links to the harness.
 
 `web.config` refuses to serve the `.php` files and disables client caching, so a

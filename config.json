@@ -30,6 +30,17 @@
       "required": false
     },
     {
+      "key": "aobp-auto-advance-standing",
+      "name": "After the seated measurement, start the standing one automatically on a timer (otherwise the operator presses Start standing when the participant is ready)",
+      "type": "checkbox"
+    },
+    {
+      "key": "aobp-auto-advance-seconds",
+      "name": "Seconds to wait before the automatic standing measurement (blank = 3)",
+      "type": "text",
+      "required": false
+    },
+    {
       "key": "aobp-save-xml-file",
       "name": "Store the raw measurement XML as a file on the record (needs seated_raw_xml / standing_raw_xml file-upload fields)",
       "type": "checkbox"

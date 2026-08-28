@@ -11,6 +11,9 @@
  *   #connect-bp-btn        starts the browser's serial port picker
  *   #start-seated-btn      seated measurement, then standing if required
  *   #start-standing-btn    standing measurement on its own
+ *   #cancel-bp-btn         optional; live only while a measurement is running
+ *   #set-aobp-mode-btn     optional; live only when the device is not in AOBP
+ *                          mode and can be told to be
  *   #status-display        the single large status line
  *   #seated-results-panel  filled after each measurement
  *   #standing-results-panel
@@ -57,15 +60,31 @@
 
   // A serial cable, not the BP+ itself: the device is behind a USB-to-serial
   // bridge, so the port carries the bridge's identifiers. Prolific is what the
-  // supplied cable uses. The picker still lists every port, because a site with
-  // a different cable must not be locked out by a filter.
-  var PORT_FILTERS = [{ usbVendorId: 0x067B }];
+  // supplied cable uses.
+  //
+  // No filter, deliberately. A filter of [{ usbVendorId: 0x067B }] reads as the
+  // safe thing to do and is not: on a Samsung Galaxy Tab S10 FE, with the
+  // supplied Prolific PL2303GT plugged in and working, requestPort() filtered
+  // on that vendor id matches nothing and the picker says "No compatible device
+  // found". The same port opens fine from an unfiltered picker, and reports
+  // 0x067B:0x23A3 once granted. Whatever the browser is doing there, a filter
+  // is the difference between a cable that works and one that appears absent.
+  //
+  // Unfiltered also keeps the promise this comment used to make and the code
+  // did not: a site with a different adapter is not locked out.
+  var PORT_FILTERS = null;
+
 
   // How far the device clock may be out before it is quietly set to this
   // computer's. The measurement timestamp goes into the result XML, so a device
   // whose clock is wrong mislabels data that cannot be corrected afterwards.
   // Overridden per project with the AOBP_CONFIG.clockToleranceMinutes setting.
   var DEFAULT_CLOCK_TOLERANCE_MINUTES = 5;
+
+  // What a BP+ must report before it can take a seated or standing measurement.
+  // Body position is the 5th parameter of `s`; older firmware answers F 14.
+  var MIN_FEATURE_VERSION = '3.0';   // the feature schema carrying measureMode
+  var MIN_API_VERSION     = '2.4';   // the command set accepting body position
 
   document.addEventListener('DOMContentLoaded', function () {
     start().catch(function (error) {
@@ -78,6 +97,8 @@
       connect:  document.getElementById('connect-bp-btn'),
       seated:   document.getElementById('start-seated-btn'),
       standing: document.getElementById('start-standing-btn'),
+      cancel:   document.getElementById('cancel-bp-btn'),
+      setAobp:  document.getElementById('set-aobp-mode-btn'),
       status:   document.getElementById('status-display'),
       panels: {
         seated:   document.getElementById('seated-results-panel'),
@@ -90,12 +111,15 @@
     var sdk = null;          // the imported module namespace
     var device = null;
     var features = null;     // the reply to `f`, read once at connect
+    var apiVersion = null;   // the reply to `ver`, or null if it could not be read
     var lastMeasurement = null;
     var lastClockSync = null;
+    var busy = false;                 // a measurement is on the arm right now
+    var seatedDone = false;
+    var standingDone = false;
     var measurementComplete = false;
 
-    setEnabled(ui.seated, false);
-    setEnabled(ui.standing, false);
+    updateButtons();
 
     // ── Status line ─────────────────────────────────────────────────────────
 
@@ -174,18 +198,60 @@
 
       await device.connect();
 
-      // One read at connect. The device announces later changes itself, so
-      // there is nothing to poll.
-      features = await device.readFeatures().catch(function (error) {
-        console.warn('[AOBP] no feature list:', error.message);
+      // device.connect() only opens the port — it sends nothing and waits for
+      // nothing. The feature list is the first thing the device actually says,
+      // so it is what proves a BP+ is on the other end at all.
+      //
+      // Deliberately not caught. Every BP+ answers `f`; silence means the port
+      // opened onto something that is not a BP+ — the wrong COM port, or a
+      // cable with nothing on the end. Reporting that as a connection would
+      // hand the operator a green status line and two live buttons attached to
+      // nothing.
+      features = await device.readFeatures();
+
+      apiVersion = await device.readApiVersion().catch(function (error) {
+        console.warn('[AOBP] no Terminal API version:', error.message);
         return null;
       });
 
-      if (features) {
-        console.log('[AOBP] device ' + features.deviceId +
-                    ', firmware ' + features.softwareVersion +
-                    ', mode ' + features.measureModeInfo.label);
+      console.log('[AOBP] device ' + features.deviceId +
+                  ', firmware ' + features.softwareVersion +
+                  ', feature list ' + features.version +
+                  ', Terminal API ' + (apiVersion || 'unknown') +
+                  ', mode ' + features.measureModeInfo.label);
+
+      var shortfall = capabilityShortfall(features, apiVersion);
+      if (shortfall) throw new Error(shortfall);
+    }
+
+    /**
+     * Whether this device can do an AOBP visit at all, or null when it can.
+     *
+     * Body position is the 5th parameter of `s`, and a device that predates it
+     * answers F 14 to a seated or standing measurement. That is a firmware
+     * problem, not something the operator can work around, so it is found at
+     * connect rather than at the first participant.
+     *
+     * Two independent statements of the same requirement, both checked because
+     * either alone can be missing or misreported:
+     *
+     *   feature list >= 3.0   the schema that carries measureMode
+     *   Terminal API  >= 2.4  the command set that accepts body position
+     */
+    function capabilityShortfall(list, api) {
+      if (atLeast(list.version, MIN_FEATURE_VERSION) === false) {
+        return 'This BP+ reports feature list ' + list.version + '. Version ' +
+               MIN_FEATURE_VERSION + ' or later is needed for seated and ' +
+               'standing measurements — the device needs a software update.';
       }
+
+      if (api !== null && atLeast(api, MIN_API_VERSION) === false) {
+        return 'This BP+ reports Terminal API ' + api + '. Version ' +
+               MIN_API_VERSION + ' or later is needed for seated and standing ' +
+               'measurements — the device needs a software update.';
+      }
+
+      return null;
     }
 
     /**
@@ -206,7 +272,19 @@
       }
 
       var pick = api.recommendedTransport();
-      console.log('[AOBP] transport: ' + pick.reason);
+      var env  = pick.environment;
+
+      // No platform logic here. The SDK decides, and on Android that means
+      // WebUSB even where navigator.serial exists, because Web Serial there
+      // enumerates Bluetooth SPP devices rather than the cable — the note at the
+      // top of sdk/transports/detect.js carries the measurements.
+      //
+      // The flags are logged because "it picked the wrong transport" is the
+      // first thing to check when a cable that works on a desktop does not work
+      // on a tablet.
+      console.log('[AOBP] transport: ' + pick.kind + ' — ' + pick.reason +
+                  ' (android=' + env.android + ' handheld=' + env.handheld +
+                  ' webSerial=' + env.webSerial + ')');
 
       if (pick.kind === api.TransportKind.serial) {
         return new api.WebSerialTransport({ filters: PORT_FILTERS });
@@ -390,13 +468,22 @@
 
       setStatus('normal', label + ': measuring — keep the arm still.');
 
+      // Cancel is live only while the cuff is on the arm. A participant who
+      // wants to stop should not be waiting on the operator finding the
+      // device's own button, and the alternative — pulling the cable — leaves
+      // the device mid-measurement.
       var measurement;
+      busy = true;
+      updateButtons();
       try {
         measurement = await measure(mode);
       } catch (error) {
         setStatus('error', label + ': ' + describe(error));
         console.error('[AOBP]', error);
         return false;
+      } finally {
+        busy = false;
+        updateButtons();
       }
 
       if (measurement.crcOk === false) {
@@ -481,8 +568,7 @@
           setStatus('success', 'BP+ connected' +
             (deviceIsAobp() ? '' : ' — the device is NOT in AOBP mode'));
           ui.connect.style.display = 'none';
-          setEnabled(ui.seated, true);
-          setEnabled(ui.standing, true);
+          updateButtons();
         } catch (error) {
           device = null;
           setEnabled(ui.connect, true);
@@ -492,40 +578,189 @@
       });
     }
 
-    if (ui.seated) {
-      ui.seated.addEventListener('click', async function () {
-        if (measurementComplete) { setStatus('success', 'Assessment already complete.'); return; }
+    /**
+     * Take one measurement and then work out what the visit still needs.
+     *
+     * Both buttons run through here. They used to have separate bodies that
+     * each did their own enabling, which is how the standing path came to
+     * disable Start seated and never restore it: press Start standing first and
+     * the seated measurement became unreachable for the rest of the visit.
+     * There is now one path and one place that decides what is live.
+     */
+    async function takeMeasurement(mode) {
+      if (measurementComplete) {
+        setStatus('success', 'Assessment already complete.');
+        return;
+      }
+      if (!device) {
+        setStatus('error', 'Please connect the BP+ first.');
+        return;
+      }
 
-        setEnabled(ui.seated, false);
-        setEnabled(ui.standing, false);
+      var ok = await runMeasurement(mode);
+      if (!ok) return;              // runMeasurement has already restored the buttons
 
-        var ok = await runMeasurement('seated');
-        if (!ok) { setEnabled(ui.seated, true); setEnabled(ui.standing, true); return; }
+      if (mode === 'seated') seatedDone = true; else standingDone = true;
 
-        if (getFieldValue(FIELD_NAMES.standing_required) === '1') {
+      if (mode === 'seated' && standingRequired() && !standingDone) {
+        var cfg = window.AOBP_CONFIG || {};
+
+        // Two flows, because the original module and this one disagree about
+        // which is right and the study has not yet decided.
+        //
+        //   autoAdvanceStanding on   the standing measurement follows on a
+        //                            timer, as aobp_integration_v1.0.1 does.
+        //   off (default)            the module stops and waits for the
+        //                            operator to press Start standing.
+        //
+        // The timer is the riskier of the two: the cuff inflates when it
+        // expires whether or not the participant is upright and settled. It is
+        // off unless a project asks for it.
+        if (cfg.autoAdvanceStanding) {
+          var seconds = autoAdvanceSeconds(cfg);
+          setStatus('normal',
+            'Seated done. Please stand the participant — the standing ' +
+            'measurement starts in ' + seconds + ' seconds.');
+          await delay(seconds * 1000);
+
+          if (!(await runMeasurement('standing'))) return;
+          standingDone = true;
+        } else {
           setStatus('normal',
             'Seated done. Stand the participant, then press Start standing.');
-          setEnabled(ui.standing, true);
-          return;                                  // the operator decides when
+          updateButtons();
+          return;                             // the operator decides when
         }
+      }
 
+      finish(mode);
+    }
+
+    /** True when the record has everything this visit was asked for. */
+    function visitComplete() {
+      return seatedDone && (standingDone || !standingRequired());
+    }
+
+    function standingRequired() {
+      return getFieldValue(FIELD_NAMES.standing_required) === '1';
+    }
+
+    /**
+     * Close the visit, but only when it is actually finished.
+     *
+     * Marking it complete used to be the last line of both handlers, so a
+     * standing measurement taken on its own closed the record with no seated
+     * reading in it. Completion is now a question about the record rather than
+     * about which button was last pressed.
+     */
+    function finish(lastMode) {
+      if (visitComplete()) {
         setFieldValue(FIELD_NAMES.measurement_status, 'complete');
         measurementComplete = true;
-        setStatus('success', 'Seated assessment complete.');
-      });
+        setStatus('success',
+          standingDone ? 'Seated and standing assessment complete.'
+                       : 'Seated assessment complete.');
+      } else if (lastMode === 'standing' && !seatedDone) {
+        setStatus('normal',
+          'Standing done. A seated measurement is still needed to complete ' +
+          'this visit.');
+      }
+      updateButtons();
+    }
+
+    if (ui.seated) {
+      ui.seated.addEventListener('click', function () { takeMeasurement('seated'); });
     }
 
     if (ui.standing) {
-      ui.standing.addEventListener('click', async function () {
-        setEnabled(ui.standing, false);
-        setEnabled(ui.seated, false);
+      ui.standing.addEventListener('click', function () { takeMeasurement('standing'); });
+    }
 
-        var ok = await runMeasurement('standing');
-        if (!ok) { setEnabled(ui.standing, true); return; }
+    /**
+     * The one place that decides what is live.
+     *
+     * Every button is derived from the same three facts — connected, busy,
+     * finished — so no path can leave a control stranded. Anything that changes
+     * one of those facts calls this rather than reaching for a button itself.
+     */
+    function updateButtons() {
+      var ready = !!device && !busy && !measurementComplete;
 
-        setFieldValue(FIELD_NAMES.measurement_status, 'complete');
-        measurementComplete = true;
-        setStatus('success', 'Standing assessment complete.');
+      setEnabled(ui.seated,   ready);
+      setEnabled(ui.standing, ready);
+      setEnabled(ui.cancel,   !!device && busy);
+      setEnabled(ui.setAobp,  ready && canSetAobpMode());
+    }
+
+    /**
+     * Whether the mode change is both possible and needed.
+     *
+     * Possible: the device reported a measureMode at all. That field arrives
+     * with feature list 3.0, and a device that does not report one will not
+     * accept MEASUREMODE in an `f` write either — so the read is the capability
+     * test, rather than branching on the version attribute.
+     *
+     * Needed: it is not already in AOBP.
+     */
+    function canSetAobpMode() {
+      return !!features && features.measureMode !== null && !deviceIsAobp();
+    }
+
+    if (ui.setAobp) {
+      ui.setAobp.addEventListener('click', async function () {
+        if (!device || !features) return;
+
+        // An accepted write always reboots the device, once, and the reboot is
+        // the only acknowledgement — there is no success code. Nothing else may
+        // be attempted meanwhile.
+        busy = true;
+        updateButtons();
+        setStatus('normal',
+          'Setting the BP+ to AOBP mode. It will restart — do not unplug it.');
+
+        try {
+          features = await device.writeFeatures([
+            [sdk.FeatureOption.measureMode, sdk.MeasureMode.bpPlusAobp],
+          ]);
+
+          if (deviceIsAobp()) {
+            setStatus('success', 'BP+ is now in AOBP mode.');
+          } else {
+            // The write was accepted and the device came back, but not in the
+            // mode asked for. Reporting success here would be a lie the first
+            // measurement would expose.
+            setStatus('error',
+              'The BP+ restarted but reports ' + features.measureModeInfo.label +
+              ', not BP+ AOBP. It may not support the AOBP protocol.');
+          }
+        } catch (error) {
+          setStatus('error', 'Could not set AOBP mode: ' + describe(error));
+          console.error('[AOBP]', error);
+        } finally {
+          busy = false;
+          updateButtons();
+        }
+      });
+    }
+
+    if (ui.cancel) {
+      ui.cancel.addEventListener('click', async function () {
+        if (!device) return;
+
+        // Disabled immediately: the device answers a cancel with one F 02 and
+        // one M 02, and a second `c` arriving between them has nothing left to
+        // cancel. The measurement's own promise rejects with F 02, so the
+        // status line and the buttons are restored by the handler that started
+        // it — there is nothing to put right here.
+        setEnabled(ui.cancel, false);
+        setStatus('normal', 'Cancelling…');
+        try {
+          await device.cancel();
+        } catch (error) {
+          // A cancel that cannot be sent is not itself a measurement failure,
+          // and the measurement will report whatever actually happened to it.
+          console.warn('[AOBP] cancel could not be sent:', error.message);
+        }
       });
     }
 
@@ -549,6 +784,41 @@
 
   function setEnabled(button, enabled) {
     if (button) button.disabled = !enabled;
+  }
+
+  function delay(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  /**
+   * Whether a dotted version is at least `minimum`.
+   *
+   * Returns null — not false — when the string cannot be read as a version, so
+   * a device that reports something unexpected is treated as "cannot tell"
+   * rather than "too old". Refusing to measure over an unparsable version
+   * string would be the worse failure.
+   */
+  function atLeast(version, minimum) {
+    if (typeof version !== 'string' || !/^\d+(\.\d+)*$/.test(version.trim())) {
+      return null;
+    }
+
+    var have = version.trim().split('.').map(Number);
+    var want = String(minimum).split('.').map(Number);
+
+    for (var i = 0; i < Math.max(have.length, want.length); i++) {
+      var a = have[i] || 0;
+      var b = want[i] || 0;
+      if (a > b) return true;
+      if (a < b) return false;
+    }
+    return true;
+  }
+
+  /** How long the auto-advance waits. v1.0.1's fixed 3 s is the default. */
+  function autoAdvanceSeconds(cfg) {
+    var seconds = Number(cfg.autoAdvanceSeconds);
+    return isFinite(seconds) && seconds >= 0 ? seconds : 3;
   }
 
   function escapeHtml(value) {
