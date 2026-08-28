@@ -427,6 +427,26 @@
         '</div>';
     }
 
+    /**
+     * Whatever the device said was wrong, as ' (…)' or ''.
+     *
+     * The per-reading Alert is the device's own account of why a determination
+     * did not produce a pressure, and is worth more to the operator than any
+     * sentence written here. A summary-line result has no readings, hence the
+     * guard rather than a direct read.
+     */
+    function alertText(measurement) {
+      var readings = (measurement && measurement.readings) || [];
+      var alerts = [];
+
+      for (var i = 0; i < readings.length; i++) {
+        var alert = readings[i].alert;
+        if (alert && alerts.indexOf(alert) === -1) alerts.push(alert);
+      }
+
+      return alerts.length ? ' (' + alerts.join('; ') + ')' : '';
+    }
+
     function storeResult(mode, measurement) {
       var fields = FIELD_NAMES[mode];
       var bp = measurement.brachial;
@@ -490,6 +510,26 @@
         setStatus('error',
           label + ': the result arrived corrupted (checksum mismatch). ' +
           'Repeat the measurement.');
+        return false;
+      }
+
+      // A result block is not the same as a measurement.
+      //
+      // When the cuff cannot be inflated — a kinked hose is the ordinary way to
+      // meet this — the device ends the request and returns a result with no
+      // blood pressure in it. Only the transport-level failures reject; this
+      // one arrives looking like an answer. Stored unchecked it wrote empty
+      // readings into the record, reported "Seated assessment complete", and
+      // left the operator with every button disabled and no way back except
+      // reloading the page.
+      var bp = measurement.brachial;
+      if (bp.sys === null || bp.dia === null) {
+        setStatus('error',
+          label + ': the device did not return a blood pressure' +
+          alertText(measurement) +
+          '. Check the cuff and the hose for a kink, then repeat the ' +
+          'measurement.');
+        console.error('[AOBP] result carried no brachial pressure', measurement);
         return false;
       }
 
