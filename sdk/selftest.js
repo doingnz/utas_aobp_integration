@@ -515,24 +515,45 @@ async function featureWriteEndToEnd() {
  */
 async function usbSerialAndDetection() {
   // ── The chooser ─────────────────────────────────────────────────────────
-  const desktop = { android: false, mobile: false, secureContext: true,
+  const desktop = { android: false, mobile: false, handheld: false, secureContext: true,
                     webSerial: true, webUsb: true, webBluetooth: true };
   equal('detect: desktop Chrome uses Web Serial',
     recommendedTransport(desktop).kind, TransportKind.serial);
 
-  // The case this exists for: Chrome on an Android tablet has WebUSB and
-  // Bluetooth but no Web Serial at all.
-  const android = { android: true, mobile: true, secureContext: true,
+  // The case this exists for: Chrome on an Android tablet reaches the cable
+  // over WebUSB.
+  const android = { android: true, mobile: true, handheld: true, secureContext: true,
                     webSerial: false, webUsb: true, webBluetooth: true };
   const pick = recommendedTransport(android);
   equal('detect: Android falls back to the USB-to-serial adapter',
     pick.kind, TransportKind.usbSerial);
-  check('detect: and says why', /Android has no Web Serial/.test(pick.reason), pick.reason);
+  check('detect: and says why', /WebUSB/.test(pick.reason), pick.reason);
 
-  // Feature first, platform second: an Android that shipped Web Serial would
-  // simply use it.
-  equal('detect: Android with Web Serial would use it',
-    recommendedTransport({ ...android, webSerial: true }).kind, TransportKind.serial);
+  // The regression this file exists to prevent. Chrome 151 on Android DOES
+  // expose navigator.serial, but its port list is Bluetooth SPP devices, not
+  // the cable — so Web Serial being present is not a reason to prefer it.
+  // Measured on a Galaxy S23 Ultra and a Galaxy Tab S10 FE.
+  const androidWithSerial = { ...android, webSerial: true };
+  equal('detect: Android with Web Serial STILL uses WebUSB',
+    recommendedTransport(androidWithSerial).kind, TransportKind.usbSerial);
+  check('detect: and explains that Web Serial there is not the cable',
+    /Bluetooth/.test(recommendedTransport(androidWithSerial).reason),
+    recommendedTransport(androidWithSerial).reason);
+
+  // Chrome's "Desktop site" mode defeats every user-agent signal: platform
+  // reads "Linux" and mobile reads false on a device that is plainly a tablet.
+  // The touch-derived handheld flag is what survives it, so it alone must be
+  // enough to route to WebUSB.
+  const desktopModeTablet = { android: false, mobile: false, handheld: true,
+                              secureContext: true, webSerial: true,
+                              webUsb: true, webBluetooth: true };
+  equal('detect: a tablet in desktop-site mode still uses WebUSB',
+    recommendedTransport(desktopModeTablet).kind, TransportKind.usbSerial);
+
+  // The converse must hold, or every touch laptop is misrouted onto a WebUSB
+  // path that Windows will refuse to claim.
+  equal('detect: a desktop with a touch screen stays on Web Serial',
+    recommendedTransport({ ...desktop, handheld: false }).kind, TransportKind.serial);
 
   equal('detect: bluetooth only, when that is all there is',
     recommendedTransport({ ...android, webUsb: false }).kind, TransportKind.bluetooth);
