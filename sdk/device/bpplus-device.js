@@ -36,9 +36,10 @@ import {
   DeviceMode,
   ResultCode,
   describeMode,
+  describeResult,
   isFailureCode,
 } from '../constants.js';
-import { BpPlusMeasurement, unusableReason } from './measurement.js';
+import { BpPlusMeasurement, unusableReason, alertsOf } from './measurement.js';
 import { BpPlusFeatures, buildFeatureWrite } from './features.js';
 import { FirmwareUpdateJob } from './firmware-update.js';
 
@@ -340,17 +341,27 @@ export class BpPlusDevice extends Emitter {
       // result, then F nn if the determination actually failed, and then M 02
       // as it returns to Ready. Returning on the result alone reported an
       // over-pressure abort as a good reading.
-      const failure = await outcome.settle(POST_RESULT_GRACE_MS);
-      if (failure) {
-        throw new BpPlusError(failure.code, { command: line });
-      }
-
       const result = reply.kind === ResponseKind.Summary
         ? parseSummaryLine(reply.fields)
         : new BpPlusMeasurement(reply.xml, {
             crcOk: reply.crcOk,
             sizeBytes: reply.size,
           });
+
+      // Built before the verdict is read, because a failed measurement still
+      // saves and returns a record, and that record carries the NIBP module's
+      // own account of what went wrong. The Table 5 code says only that the
+      // module failed; the Alert says it was over-pressure, and which code.
+      const failure = await outcome.settle(POST_RESULT_GRACE_MS);
+      if (failure) {
+        const alerts = alertsOf(result);
+        throw new BpPlusError(failure.code, {
+          command: line,
+          message: alerts.length
+            ? `${describeResult(failure.code).text} ${alerts.join('; ')}`
+            : undefined,
+        });
+      }
 
       // A device does not always announce a result it cannot stand behind, so
       // the result is judged as well as the verdict on it. Off by

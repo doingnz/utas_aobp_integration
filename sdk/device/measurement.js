@@ -505,3 +505,27 @@ function beyondRange(value, limits) {
   if (!limits || !Number.isFinite(limits.min) || !Number.isFinite(limits.max)) return false;
   return value < limits.min || value > limits.max;
 }
+
+/**
+ * What the device said was wrong with each determination, distinct, in order.
+ *
+ * The NIBP module's own fault text, carried per reading as `Alert`. It is
+ * where the specific cause lives — the Table 5 code that ends the measurement
+ * is general, and firmware composes this string as
+ * "Unable to measure BP: Over Pressure (C19-1)": a category, then the module's
+ * error code and reason. A failed run still saves and returns a record, so
+ * this survives the failure that makes the numbers worthless.
+ *
+ * @param {BpPlusMeasurement|object} result
+ * @returns {string[]}
+ */
+export function alertsOf(result) {
+  const readings = (result && result.readings) || [];
+  const seen = [];
+
+  for (const reading of readings) {
+    const alert = reading && reading.alert;
+    if (alert && !seen.includes(alert)) seen.push(alert);
+  }
+  return seen;
+}
