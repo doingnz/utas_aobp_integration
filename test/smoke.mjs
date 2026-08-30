@@ -14,7 +14,12 @@
  */
 
 import fs from 'node:fs';
-import { unusableReason, parseAlerts, alertsOf } from '../sdk/device/measurement.js';
+import {
+  unusableReason,
+  parseAlerts,
+  alertsOf,
+  classifyAlert,
+} from '../sdk/device/measurement.js';
 import { ResultCode } from '../sdk/constants.js';
 
 let failures = 0;
@@ -147,6 +152,31 @@ check('the same alert on every reading is reported once',
   alertsOf({ readings: [{ alert: oneAlert }, { alert: oneAlert }] }).length === 1);
 check('a result with no readings and no Alert yields nothing',
   alertsOf({ brachial: { sys: 0, dia: 0 } }).length === 0);
+
+// ── Quality alerts are not faults ────────────────────────────────────────────
+// The device reports signal quality through the same <Alert> element it uses
+// for faults. Treating every alert as a problem puts a warning on a perfect
+// measurement.
+
+console.log('\nalert severity');
+
+const sev = m => classifyAlert(m).severity;
+
+check('Excellent is good news', sev('Excellent Signal') === 'good');
+check('Good is good news', sev('Good Signal') === 'good');
+check('Acceptable is good news', sev('Acceptable Signal') === 'good');
+check('Poor asks for attention', sev('Poor Signal') === 'caution');
+check('Invalid is bad', sev('Invalid Signal') === 'bad');
+check('a fault is bad', sev('Unable to measure BP: Over Pressure (C19)') === 'bad');
+check('an unrecognised alert is shown, not softened', sev('Something new') === 'bad');
+check('matching is case insensitive', sev('excellent signal') === 'good');
+check('a word that merely starts with a label is not a quality report',
+  sev('Goodness gracious') === 'bad');
+check('the quality label is reported', classifyAlert('Poor Signal').quality === 'Poor');
+check('a fault has no quality label',
+  classifyAlert('Unable to measure BP: Over Pressure (C19)').quality === null);
+check('severity rides along on a parsed alert',
+  parseAlerts('Excellent Signal;AABB;')[0]?.severity === 'good');
 
 console.log(failures ? `\n${failures} FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

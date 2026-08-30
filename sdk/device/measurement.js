@@ -23,7 +23,12 @@
  */
 
 import { receiveError } from '../core/errors.js';
-import { describeSignalQuality, describeRhythm, ResultCode } from '../constants.js';
+import {
+  describeSignalQuality,
+  describeRhythm,
+  ResultCode,
+  SIGNAL_QUALITY_BANDS,
+} from '../constants.js';
 
 export class BpPlusMeasurement {
 
@@ -537,6 +542,48 @@ function beyondRange(value, limits) {
  * @param {string|null} text  the raw <Alert> contents
  * @returns {Array<{message: string, tm2917_hex_result: string|null}>}
  */
+/**
+ * What one alert is telling a host: a signal-quality report, or a fault.
+ *
+ * The `<Alert>` element carries both. "Excellent Signal" and "Unable to measure
+ * BP: Over Pressure (C19)" arrive by the same route, and a host that treats
+ * every alert as a problem puts a warning on a perfect measurement.
+ *
+ * Quality words are the SIGNAL_QUALITY_BANDS labels, matched at the start of
+ * the message — the device says "Excellent Signal", so the label leads. Anchored
+ * on purpose: a fault sentence that happens to contain one of these words later
+ * is still a fault.
+ *
+ * Severity is for a host deciding a colour:
+ *
+ *   good      Excellent, Good, Acceptable — the reading is usable
+ *   caution   Poor — a reading the device does not trust
+ *   bad       Invalid, and every fault
+ *
+ * @param {string} message
+ * @returns {{severity: 'good'|'caution'|'bad', quality: string|null}}
+ */
+export function classifyAlert(message) {
+  const text = String(message || '').trim();
+
+  for (const band of SIGNAL_QUALITY_BANDS) {
+    const pattern = new RegExp('^' + band.label + '\\b', 'i');
+    if (!pattern.test(text)) continue;
+
+    // Poor and Invalid are both unusable, so `usable` alone cannot separate
+    // them — and they call for different colours: one says look at this, the
+    // other says the reading is not one.
+    return {
+      severity: band.usable ? 'good' : (band.label === 'Invalid' ? 'bad' : 'caution'),
+      quality: band.label,
+    };
+  }
+
+  // Not a quality word: a fault, or something this SDK has not seen. Either way
+  // it is shown rather than softened.
+  return { severity: 'bad', quality: null };
+}
+
 export function parseAlerts(text) {
   if (!text) return [];
 
@@ -548,7 +595,11 @@ export function parseAlerts(text) {
     if (!message) continue;               // the trailing separator, or padding
 
     const hex = (parts[i + 1] || '').trim();
-    alerts.push({ message, tm2917_hex_result: hex || null });
+    alerts.push({
+      message,
+      tm2917_hex_result: hex || null,
+      ...classifyAlert(message),
+    });
   }
 
   return alerts;

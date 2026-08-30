@@ -446,11 +446,25 @@
         '</div>';
     }
 
+    // Green when the device is reporting a good measurement, amber when it is
+    // reporting one it does not fully trust, red for a fault. The panel takes
+    // the worst of what it holds.
+    var ALERT_STYLES = {
+      good:    { background: '#d8f3dc', border: '1px solid #b7e4c7', color: '#2d6a4f' },
+      caution: { background: '#fff8e1', border: '1px solid #ffe082', color: '#8a6100' },
+      bad:     { background: '#fdecea', border: '1px solid #f5c2c0', color: '#b71c1c' },
+    };
+
     /**
-     * Show what the device said was wrong, in its own words.
+     * Show what the device said, in its own words.
+     *
+     * The Alert element carries two different things by the same route. Signal
+     * quality — "Excellent Signal" — is the device reporting that a measurement
+     * went well, and colouring that amber under the word "alert" tells an
+     * operator a good reading is a problem.
      *
      * Messages only. Each alert also carries the TM2917 hex result, which is
-     * the module's raw reply — it belongs in the console and in a support
+     * the module's raw reply: it belongs in the console and in a support
      * report, and means nothing to the person holding the cuff.
      */
     function showAlerts(alerts) {
@@ -463,25 +477,42 @@
         return;
       }
 
+      var worst = 'good';
       var messages = [];
+
       for (var i = 0; i < list.length; i++) {
-        if (messages.indexOf(list[i].message) === -1) messages.push(list[i].message);
-        console.warn('[AOBP] device alert: ' + list[i].message +
-                     ' [' + (list[i].tm2917_hex_result || 'no hex') + ']');
+        var alert = list[i];
+        if (alert.severity === 'bad') worst = 'bad';
+        else if (alert.severity === 'caution' && worst !== 'bad') worst = 'caution';
+
+        if (messages.indexOf(alert.message) === -1) messages.push(alert.message);
+
+        console.warn('[AOBP] device alert (' + alert.severity + '): ' + alert.message +
+                     ' [' + (alert.tm2917_hex_result || 'no hex') + ']');
       }
 
+      var style = ALERT_STYLES[worst] || ALERT_STYLES.bad;
+
+      // "Measurement" when the device is describing one, "Device alert" when it
+      // is reporting a fault.
+      var everyOneIsQuality = list.every(function (a) { return !!a.quality; });
+      var lead = everyOneIsQuality
+        ? (messages.length === 1 ? 'Measurement: ' : 'Measurement:')
+        : (messages.length === 1 ? 'Device alert: ' : 'Device alerts:');
+
       ui.alerts.style.display      = '';
-      ui.alerts.style.background   = '#fff8e1';
-      ui.alerts.style.border       = '1px solid #ffe082';
-      ui.alerts.style.color        = '#8a6100';
+      ui.alerts.style.background   = style.background;
+      ui.alerts.style.border       = style.border;
+      ui.alerts.style.color        = style.color;
       ui.alerts.style.borderRadius = '8px';
       ui.alerts.style.padding      = '10px 14px';
       ui.alerts.style.marginTop    = '10px';
       ui.alerts.style.fontWeight   = '600';
+
       var newline = String.fromCharCode(10);
       ui.alerts.innerText = messages.length === 1
-        ? 'Device alert: ' + messages[0]
-        : 'Device alerts:' + newline + '• ' + messages.join(newline + '• ');
+        ? lead + messages[0]
+        : lead + newline + '• ' + messages.join(newline + '• ');
     }
 
     function storeResult(mode, measurement) {
