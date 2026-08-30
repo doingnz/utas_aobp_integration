@@ -628,13 +628,17 @@
      * There is now one path and one place that decides what is live.
      */
     async function takeMeasurement(mode) {
-      if (measurementComplete) {
-        setStatus('success', 'Assessment already complete.');
-        return;
-      }
       if (!device) {
         setStatus('error', 'Please connect the BP+ first.');
         return;
+      }
+
+      // A repeat replaces the stored reading for this position. Said only to
+      // the console: the operator asked for it, and the status line is about to
+      // be taken over by the measurement itself.
+      if (measurementComplete) {
+        console.log('[AOBP] repeating the ' + mode + ' measurement; the stored ' +
+                    'reading for that position will be replaced');
       }
 
       var ok = await runMeasurement(mode);
@@ -724,7 +728,12 @@
      * one of those facts calls this rather than reaching for a button itself.
      */
     function updateButtons() {
-      var ready = !!device && !busy && !measurementComplete;
+      // Completion does not lock the buttons. The operator is in the room and
+      // the module is not: a reading that succeeded but is unusable — the
+      // participant moved, the cuff slipped, the arm was talking — has to be
+      // repeatable without reloading the page. `busy` is the only thing that
+      // takes a control away.
+      var ready = !!device && !busy;
 
       setEnabled(ui.seated,   ready);
       setEnabled(ui.standing, ready);

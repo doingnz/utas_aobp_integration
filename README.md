@@ -157,7 +157,16 @@ records the choice.
 
 Connect, then **Start seated**. If `sys_standing_required` is `1` the module
 stops and asks for the participant to be stood up; **Start standing** takes the
-second measurement when the operator is ready. Nothing runs on a timer.
+second measurement when the operator is ready. Nothing runs on a timer unless
+the project turns on **auto advance** (see *Project settings*), which starts the
+standing measurement itself after a fixed wait.
+
+Completing a visit does not lock the buttons. `sys_measurement_status` is set to
+`complete`, but **Start seated** and **Start standing** stay live so a reading
+that succeeded and is nevertheless unusable — the participant moved, the cuff
+slipped — can be taken again without reloading the page. A repeat replaces the
+stored reading for that position. Only a measurement actually in progress takes
+the buttons away.
 
 If the instrument carries a `#cancel-bp-btn`, it is live only while the cuff is
 inflating and stops the measurement at the device — `c` is the one command the
