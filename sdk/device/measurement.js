@@ -454,6 +454,20 @@ function medianOfFirst(values, n) {
  * looks unlikely. Pass null for `bpRange` and only the checks that need no
  * device knowledge are applied.
  *
+ * `<bpRange>` is the BRACHIAL range — what the NIBP module can measure — and is
+ * the right bound for the values checked here. Do not narrow it to the ~260
+ * mmHg figure that appears elsewhere: that is a different limit, about headroom
+ * for the suprasystolic phase rather than about brachial pressure. The cuff has
+ * to sit well above systolic to capture the pulse wave — nominally SYS + 35,
+ * settling nearer SYS + 40 — so a systolic of 280 would need roughly 320 mmHg
+ * of cuff, past the 300 mmHg at which the safety system aborts and dumps.
+ *
+ * The consequence is two ceilings, not one: this device measures brachial
+ * pressure up to and including 280, and above about 260 it will simply fail to
+ * produce the suprasystolic rhythm and everything derived from it. A brachial
+ * reading of 275 is valid and must not be refused here because the PWA that
+ * accompanies it was out of reach.
+ *
  * Works on both result shapes: a BpPlusMeasurement and the plain object
  * parseSummaryLine() returns both expose `brachial`.
  *
