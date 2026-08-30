@@ -179,9 +179,30 @@
       field.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
+    /**
+     * Read a field the instrument is expected to supply.
+     *
+     * A missing field is said out loud, because the alternative is worse than a
+     * wrong answer: it is the right answer to a question nobody asked. The one
+     * value read this way is sys_standing_required, and when the element is
+     * absent this returns null, `null === '1'` is false, and no participant is
+     * ever asked to stand — for the whole study, without an error anywhere.
+     *
+     * Three ways that happens: the value arrives as a URL parameter rather than
+     * a field, the field is named differently on this instrument, or it was
+     * never added. All three look identical from here, so this says what it
+     * looked for rather than guessing which.
+     */
     function getFieldValue(name) {
       var field = document.querySelector('[name="' + name + '"]');
-      return field ? field.value : null;
+      if (!field) {
+        console.warn('[AOBP] no field named "' + name + '" on this page. ' +
+                     'Reading it as empty — if the value is meant to come from ' +
+                     'somewhere else, such as a URL parameter, this module ' +
+                     'cannot see it.');
+        return null;
+      }
+      return field.value;
     }
 
     /**
