@@ -521,25 +521,76 @@ function beyondRange(value, limits) {
 }
 
 /**
- * What the device said was wrong with each determination, distinct, in order.
+ * The alerts in one `<Alert>` element, as `{message, tm2917_hex_result}`.
  *
- * The NIBP module's own fault text, carried per reading as `Alert`. It is
- * where the specific cause lives — the Table 5 code that ends the measurement
- * is general, and firmware composes this string as
- * "Unable to measure BP: Over Pressure (C19-1)": a category, then the module's
- * error code and reason. A failed run still saves and returns a record, so
- * this survives the failure that makes the numbers worthless.
+ * Firmware packs the element as pairs, semicolon separated, with a trailing
+ * separator:
+ *
+ *   Unable to measure BP: Over Pressure (C19);1B0B6843313930412004CB;
+ *
+ * A measurement that raised several alerts carries several pairs in the same
+ * element. The two halves are for different readers and must not be run
+ * together: the message is written for a person, and the TM2917 hex result is
+ * the module's raw reply, which means nothing to a clinical user and belongs in
+ * a log or a support report.
+ *
+ * @param {string|null} text  the raw <Alert> contents
+ * @returns {Array<{message: string, tm2917_hex_result: string|null}>}
+ */
+export function parseAlerts(text) {
+  if (!text) return [];
+
+  const parts = String(text).split(';');
+  const alerts = [];
+
+  for (let i = 0; i < parts.length; i += 2) {
+    const message = (parts[i] || '').trim();
+    if (!message) continue;               // the trailing separator, or padding
+
+    const hex = (parts[i + 1] || '').trim();
+    alerts.push({ message, tm2917_hex_result: hex || null });
+  }
+
+  return alerts;
+}
+
+/**
+ * Every alert on a result, in order, without repeats.
+ *
+ * The NIBP module's own account of what went wrong. It is where the specific
+ * cause lives — the Table 5 code that ends a measurement is general — and a
+ * failed run still saves and returns a record, so this survives the failure
+ * that makes the numbers worthless.
  *
  * @param {BpPlusMeasurement|object} result
- * @returns {string[]}
+ * @returns {Array<{message: string, tm2917_hex_result: string|null}>}
  */
 export function alertsOf(result) {
-  const readings = (result && result.readings) || [];
-  const seen = [];
+  if (!result) return [];
 
-  for (const reading of readings) {
-    const alert = reading && reading.alert;
-    if (alert && !seen.includes(alert)) seen.push(alert);
+  const raw = [];
+  for (const reading of result.readings || []) {
+    if (reading && reading.alert) raw.push(reading.alert);
   }
-  return seen;
+
+  // A single (non-AOBP) result carries one Alert of its own rather than a list
+  // of readings to hang it on.
+  if (!raw.length && typeof result.value === 'function') {
+    const single = result.value('Alert');
+    if (single) raw.push(single);
+  }
+
+  const seen = new Set();
+  const alerts = [];
+
+  for (const text of raw) {
+    for (const alert of parseAlerts(text)) {
+      const key = alert.message + '|' + alert.tm2917_hex_result;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      alerts.push(alert);
+    }
+  }
+
+  return alerts;
 }

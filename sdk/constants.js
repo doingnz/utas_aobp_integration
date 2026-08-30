@@ -146,7 +146,9 @@ const RESULT_CODE_TEXT = Object.freeze({
   // The specific cause travels separately, in the saved record's per-reading
   // Alert, which firmware composes as "Unable to measure BP: Over Pressure
   // (C19-1)" — category, then the NIBP module's error code and reason.
-  // device.measure() quotes it, so this text only has to name the category.
+  // device.measure() carries it on the error as `alerts`, for a host to show
+  // separately, so this text only has to name the category.
+  11: 'The blood-pressure module reported an error.',
   12: 'The measurement data is invalid.',
   13: 'Blood pressure was outside the measurable range.',
   14: 'Invalid command — the device is on a screen or in a mode that cannot carry it out.',

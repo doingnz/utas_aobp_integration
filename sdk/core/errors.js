@@ -19,6 +19,11 @@ export class BpPlusError extends Error {
    * @param {string} [options.message]  overrides the standard text
    * @param {string} [options.command]  the command line that provoked it
    * @param {*}      [options.cause]
+   * @param {Array<{message: string, tm2917_hex_result: string|null}>} [options.alerts]
+   *        the device's own account of what went wrong, for a host to show
+   *        separately. Kept off the message on purpose: the message names the
+   *        category, and an alert carries a hex result no clinical user should
+   *        be shown.
    */
   constructor(code, options = {}) {
     const described = describeResult(code);
@@ -30,6 +35,7 @@ export class BpPlusError extends Error {
     this.known   = described.known;
     if (options.command) this.command = options.command;
     if (options.cause)   this.cause   = options.cause;
+    this.alerts = options.alerts || [];
   }
 
   /** True when the device is temporarily unable rather than refusing outright. */

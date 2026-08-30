@@ -18,6 +18,8 @@
  *                          still the one we think it is
  *   #visit-state           optional; what the record still needs, and whether
  *                          it is ready to submit
+ *   #alerts-display        optional; what the device said was wrong, in its own
+ *                          words — messages only, never the TM2917 hex
  *   #status-display        the single large status line
  *   #seated-results-panel  filled after each measurement
  *   #standing-results-panel
@@ -85,8 +87,6 @@
   // Overridden per project with the AOBP_CONFIG.clockToleranceMinutes setting.
   var DEFAULT_CLOCK_TOLERANCE_MINUTES = 5;
 
-  // What a BP+ must report before it can take a seated or standing measurement.
-  // Body position is the 5th parameter of `s`; older firmware answers F 14.
   // Module scope on purpose. updateButtons() runs as the first thing start()
   // does, before any `var` inside it has been assigned — putting this there
   // made renderVisitState() read a property of undefined and took the whole
@@ -97,6 +97,8 @@
     complete:   { background: '#d8f3dc', border: '1px solid #b7e4c7', color: '#2d6a4f' },
   };
 
+  // What a BP+ must report before it can take a seated or standing measurement.
+  // Body position is the 5th parameter of `s`; older firmware answers F 14.
   var MIN_FEATURE_VERSION = '3.0';   // the feature schema carrying measureMode
   var MIN_API_VERSION     = '2.4';   // the command set accepting body position
 
@@ -115,6 +117,7 @@
       setAobp:  document.getElementById('set-aobp-mode-btn'),
       ping:     document.getElementById('ping-bp-btn'),
       visit:    document.getElementById('visit-state'),
+      alerts:   document.getElementById('alerts-display'),
       status:   document.getElementById('status-display'),
       panels: {
         seated:   document.getElementById('seated-results-panel'),
@@ -444,23 +447,41 @@
     }
 
     /**
-     * Whatever the device said was wrong, as ' (…)' or ''.
+     * Show what the device said was wrong, in its own words.
      *
-     * The per-reading Alert is the device's own account of why a determination
-     * did not produce a pressure, and is worth more to the operator than any
-     * sentence written here. A summary-line result has no readings, hence the
-     * guard rather than a direct read.
+     * Messages only. Each alert also carries the TM2917 hex result, which is
+     * the module's raw reply — it belongs in the console and in a support
+     * report, and means nothing to the person holding the cuff.
      */
-    function alertText(measurement) {
-      var readings = (measurement && measurement.readings) || [];
-      var alerts = [];
+    function showAlerts(alerts) {
+      if (!ui.alerts) return;
 
-      for (var i = 0; i < readings.length; i++) {
-        var alert = readings[i].alert;
-        if (alert && alerts.indexOf(alert) === -1) alerts.push(alert);
+      var list = alerts || [];
+      if (!list.length) {
+        ui.alerts.style.display = 'none';
+        ui.alerts.innerText = '';
+        return;
       }
 
-      return alerts.length ? ' (' + alerts.join('; ') + ')' : '';
+      var messages = [];
+      for (var i = 0; i < list.length; i++) {
+        if (messages.indexOf(list[i].message) === -1) messages.push(list[i].message);
+        console.warn('[AOBP] device alert: ' + list[i].message +
+                     ' [' + (list[i].tm2917_hex_result || 'no hex') + ']');
+      }
+
+      ui.alerts.style.display      = '';
+      ui.alerts.style.background   = '#fff8e1';
+      ui.alerts.style.border       = '1px solid #ffe082';
+      ui.alerts.style.color        = '#8a6100';
+      ui.alerts.style.borderRadius = '8px';
+      ui.alerts.style.padding      = '10px 14px';
+      ui.alerts.style.marginTop    = '10px';
+      ui.alerts.style.fontWeight   = '600';
+      var newline = String.fromCharCode(10);
+      ui.alerts.innerText = messages.length === 1
+        ? 'Device alert: ' + messages[0]
+        : 'Device alerts:' + newline + '• ' + messages.join(newline + '• ');
     }
 
     function storeResult(mode, measurement) {
@@ -502,6 +523,7 @@
         return false;
       }
 
+      showAlerts([]);
       setStatus('normal', label + ': measuring — keep the arm still.');
 
       // Cancel is live only while the cuff is on the arm. A participant who
@@ -515,6 +537,7 @@
         measurement = await measure(mode);
       } catch (error) {
         setStatus('error', label + ': ' + describe(error));
+        showAlerts(error.alerts);
         console.error('[AOBP]', error);
         return false;
       } finally {
@@ -543,6 +566,7 @@
       // unusable result before it reaches here, so there is nothing to repeat.
 
       lastMeasurement = measurement;
+      showAlerts(sdk.alertsOf(measurement));
       setStatus('normal', label + ': saving results…');
       storeResult(mode, measurement);
       renderPanel(mode, measurement);
@@ -603,9 +627,11 @@
         }
 
         // A result the device produced but that is not a reading: the cuff and
-        // the hose are what the operator can actually do something about.
+        // the hose are what the operator can actually do something about. What
+        // the device itself said goes to the alerts panel, not into this line.
         if (sdk && (error.code === sdk.ResultCode.measurementDataInvalid ||
-                    error.code === sdk.ResultCode.measurementBPOutOfRange)) {
+                    error.code === sdk.ResultCode.measurementBPOutOfRange ||
+                    error.code === sdk.ResultCode.nibpDeviceError)) {
           return error.message +
                  ' Check the cuff and the hose for a kink, then repeat the measurement.';
         }

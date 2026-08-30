@@ -36,7 +36,6 @@ import {
   DeviceMode,
   ResultCode,
   describeMode,
-  describeResult,
   isFailureCode,
 } from '../constants.js';
 import { BpPlusMeasurement, unusableReason, alertsOf } from './measurement.js';
@@ -354,12 +353,13 @@ export class BpPlusDevice extends Emitter {
       // module failed; the Alert says it was over-pressure, and which code.
       const failure = await outcome.settle(POST_RESULT_GRACE_MS);
       if (failure) {
-        const alerts = alertsOf(result);
+        // Attached, not appended to the message. The message names the category
+        // for the status line; the alerts are a list a host shows in its own
+        // right, and each carries a TM2917 hex result that is for a log rather
+        // than for the person holding the cuff.
         throw new BpPlusError(failure.code, {
           command: line,
-          message: alerts.length
-            ? `${describeResult(failure.code).text} ${alerts.join('; ')}`
-            : undefined,
+          alerts: alertsOf(result),
         });
       }
 

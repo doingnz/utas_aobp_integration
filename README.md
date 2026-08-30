@@ -131,6 +131,7 @@ The module looks for these elements on the AOBP instrument:
 | `#set-aobp-mode-btn` | Optional. Puts the device into BP+ AOBP mode |
 | `#ping-bp-btn` | Optional. Confirms the link is live and the device still usable |
 | `#visit-state` | Optional. What the record still needs, and whether it may be submitted |
+| `#alerts-display` | Optional. What the device said was wrong, in its own words |
 | `#status-display` | The single large status line |
 | `#seated-results-panel` | Filled after the seated measurement |
 | `#standing-results-panel` | Filled after the standing measurement |

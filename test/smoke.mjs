@@ -14,7 +14,7 @@
  */
 
 import fs from 'node:fs';
-import { unusableReason } from '../sdk/device/measurement.js';
+import { unusableReason, parseAlerts, alertsOf } from '../sdk/device/measurement.js';
 import { ResultCode } from '../sdk/constants.js';
 
 let failures = 0;
@@ -52,6 +52,7 @@ if (!JSDOM) {
     <button id="ping-bp-btn"></button>
     <button id="set-aobp-mode-btn"></button>
     <div id="visit-state"></div>
+    <div id="alerts-display"></div>
     <div id="seated-results-panel"></div>
     <div id="standing-results-panel"></div>
     <input type="hidden" name="sys_standing_required" value="0">
@@ -114,6 +115,38 @@ check('without a feature list a plausible reading is still usable',
   codeOf(result(122, 78), null) === null);
 check('without a feature list an empty result is still refused',
   codeOf(result(null, null), null) === ResultCode.measurementDataInvalid);
+
+// ── Alert parsing ────────────────────────────────────────────────────────────
+// Firmware packs <Alert> as message;hex; pairs. The hex is the module's raw
+// reply and must never reach a clinical user, so the two halves come back
+// separately rather than run together in one string.
+
+console.log('\nalert parsing');
+
+const oneAlert = 'Unable to measure BP: Over Pressure (C19);1B0B6843313930412004CB;';
+const parsed = parseAlerts(oneAlert);
+
+check('one alert yields one entry', parsed.length === 1);
+check('the message excludes the hex',
+  parsed[0]?.message === 'Unable to measure BP: Over Pressure (C19)',
+  JSON.stringify(parsed[0]?.message));
+check('the hex is kept separately',
+  parsed[0]?.tm2917_hex_result === '1B0B6843313930412004CB');
+
+const two = parseAlerts('Over Pressure (C19);AABB;Air Leak (C07);CCDD;');
+check('two alerts yield two entries', two.length === 2);
+check('the second message is intact', two[1]?.message === 'Air Leak (C07)');
+
+check('a message with no hex still parses',
+  parseAlerts('Something odd')[0]?.tm2917_hex_result === null);
+check('an empty element yields nothing', parseAlerts('').length === 0);
+check('a trailing separator adds no empty entry',
+  parseAlerts('Only one;AABB;').length === 1);
+
+check('the same alert on every reading is reported once',
+  alertsOf({ readings: [{ alert: oneAlert }, { alert: oneAlert }] }).length === 1);
+check('a result with no readings and no Alert yields nothing',
+  alertsOf({ brachial: { sys: 0, dia: 0 } }).length === 0);
 
 console.log(failures ? `\n${failures} FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);
