@@ -606,42 +606,56 @@ export function parseAlerts(text) {
 }
 
 /**
- * Every alert on a result, in order, without repeats.
+ * Every alert on a result, in order, without repeats, and where it came from.
  *
- * The NIBP module's own account of what went wrong. It is where the specific
- * cause lives — the Table 5 code that ends a measurement is general — and a
- * failed run still saves and returns a record, so this survives the failure
- * that makes the numbers worthless.
+ * An AOBP run takes several blood-pressure determinations and each carries its
+ * own Alert, so "which reading" is part of the answer: nobody is in the room
+ * while an AOBP measurement runs, and afterwards the alerts are the only record
+ * of how it went. `readings` holds the 1-based determination numbers an alert
+ * appeared on, and is empty for a single measurement's own Alert.
  *
  * @param {BpPlusMeasurement|object} result
- * @returns {Array<{message: string, tm2917_hex_result: string|null}>}
+ * @returns {Array<{message: string, tm2917_hex_result: string|null,
+ *                  severity: string, quality: string|null, readings: number[]}>}
  */
 export function alertsOf(result) {
   if (!result) return [];
 
-  const raw = [];
-  for (const reading of result.readings || []) {
-    if (reading && reading.alert) raw.push(reading.alert);
-  }
+  const found = [];
+  const list = result.readings || [];
 
-  // A single (non-AOBP) result carries one Alert of its own rather than a list
-  // of readings to hang it on.
-  if (!raw.length && typeof result.value === 'function') {
-    const single = result.value('Alert');
-    if (single) raw.push(single);
-  }
-
-  const seen = new Set();
-  const alerts = [];
-
-  for (const text of raw) {
-    for (const alert of parseAlerts(text)) {
-      const key = alert.message + '|' + alert.tm2917_hex_result;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      alerts.push(alert);
+  for (let i = 0; i < list.length; i++) {
+    const reading = list[i];
+    if (!reading || !reading.alert) continue;
+    for (const alert of parseAlerts(reading.alert)) {
+      found.push({ alert, reading: i + 1 });
     }
   }
 
-  return alerts;
+  // A single (non-AOBP) result carries one Alert of its own rather than a list
+  // of determinations to hang it on.
+  if (!found.length) {
+    const single = typeof result.alert === 'string'
+      ? result.alert
+      : (typeof result.value === 'function' ? result.value('Alert') : null);
+    for (const alert of parseAlerts(single)) found.push({ alert, reading: null });
+  }
+
+  const byMessage = new Map();
+
+  for (const { alert, reading } of found) {
+    const existing = byMessage.get(alert.message);
+    if (existing) {
+      if (reading !== null && !existing.readings.includes(reading)) {
+        existing.readings.push(reading);
+      }
+      continue;
+    }
+    byMessage.set(alert.message, {
+      ...alert,
+      readings: reading === null ? [] : [reading],
+    });
+  }
+
+  return [...byMessage.values()];
 }

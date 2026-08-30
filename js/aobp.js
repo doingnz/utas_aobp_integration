@@ -20,6 +20,8 @@
  *                          it is ready to submit
  *   #alerts-display        optional; what the device said was wrong, in its own
  *                          words — messages only, never the TM2917 hex
+ *   #device-info           optional; versions and mode, for an instrument whose
+ *                          reader is a technician rather than a nurse
  *   #status-display        the single large status line
  *   #seated-results-panel  filled after each measurement
  *   #standing-results-panel
@@ -49,6 +51,8 @@
       datetime:  'seated_datetime',
       guid:      'seated_guid',
       device_id: 'seated_bpplus_device_id',
+      snr:       'seated_snr',
+      alerts:    'seated_alerts',
       xml:       'seated_raw_xml_text',
     },
 
@@ -60,6 +64,8 @@
       datetime:  'standing_datetime',
       guid:      'standing_guid',
       device_id: 'standing_bpplus_device_id',
+      snr:       'standing_snr',
+      alerts:    'standing_alerts',
       xml:       'standing_raw_xml_text',
     },
   };
@@ -118,6 +124,7 @@
       ping:     document.getElementById('ping-bp-btn'),
       visit:    document.getElementById('visit-state'),
       alerts:   document.getElementById('alerts-display'),
+      info:     document.getElementById('device-info'),
       status:   document.getElementById('status-display'),
       panels: {
         seated:   document.getElementById('seated-results-panel'),
@@ -458,48 +465,71 @@
     /**
      * Show what the device said, in its own words.
      *
-     * The Alert element carries two different things by the same route. Signal
-     * quality — "Excellent Signal" — is the device reporting that a measurement
-     * went well, and colouring that amber under the word "alert" tells an
-     * operator a good reading is a problem.
+     * One line, and more only when there is something to say.
+     *
+     * An AOBP run is three blood-pressure determinations and then one
+     * suprasystolic capture, and each part can report separately: three Alerts
+     * and one SNR. Showing four lines every time makes the operator adjudicate
+     * a result that is usually simply fine. Showing one line and hiding a
+     * failed determination is worse — nobody is in the room while it runs, so
+     * the panel is the only chance to notice.
+     *
+     * So: the summary is the signal quality, and a determination that went
+     * wrong is named underneath it. A clean run is one green line.
      *
      * Messages only. Each alert also carries the TM2917 hex result, which is
      * the module's raw reply: it belongs in the console and in a support
      * report, and means nothing to the person holding the cuff.
      */
-    function showAlerts(alerts) {
+    function showAlerts(alerts, quality) {
       if (!ui.alerts) return;
 
       var list = alerts || [];
-      if (!list.length) {
+      if (!list.length && !(quality && quality.known)) {
         ui.alerts.style.display = 'none';
         ui.alerts.innerText = '';
         return;
       }
 
       var worst = 'good';
-      var messages = [];
+      var trouble = [];
 
       for (var i = 0; i < list.length; i++) {
         var alert = list[i];
+
         if (alert.severity === 'bad') worst = 'bad';
         else if (alert.severity === 'caution' && worst !== 'bad') worst = 'caution';
 
-        if (messages.indexOf(alert.message) === -1) messages.push(alert.message);
+        // A per-determination quality report is the good news the summary line
+        // already carries; only what went wrong is worth a line of its own.
+        if (alert.severity !== 'good') {
+          trouble.push(alert.readings.length
+            ? 'BP' + alert.readings.join(' and BP') + ': ' + alert.message
+            : alert.message);
+        }
 
-        console.warn('[AOBP] device alert (' + alert.severity + '): ' + alert.message +
+        console.warn('[AOBP] device alert (' + alert.severity + ')' +
+                     (alert.readings.length ? ' BP' + alert.readings.join('/') : '') +
+                     ': ' + alert.message +
                      ' [' + (alert.tm2917_hex_result || 'no hex') + ']');
       }
 
+      var summary;
+      if (quality && quality.known) {
+        if (!quality.usable && worst === 'good') worst = 'caution';
+        summary = 'Measurement: ' + quality.label + ' signal (SNR ' + quality.snr + ')';
+      } else {
+        summary = list.length === 1 && !trouble.length
+          ? 'Measurement: ' + list[0].message
+          : 'Device alert';
+      }
+
+      if (trouble.length) {
+        summary += ' — ' + (trouble.length === 1 ? '1 reading' : trouble.length + ' readings') +
+                   ' reported a problem';
+      }
+
       var style = ALERT_STYLES[worst] || ALERT_STYLES.bad;
-
-      // "Measurement" when the device is describing one, "Device alert" when it
-      // is reporting a fault.
-      var everyOneIsQuality = list.every(function (a) { return !!a.quality; });
-      var lead = everyOneIsQuality
-        ? (messages.length === 1 ? 'Measurement: ' : 'Measurement:')
-        : (messages.length === 1 ? 'Device alert: ' : 'Device alerts:');
-
       ui.alerts.style.display      = '';
       ui.alerts.style.background   = style.background;
       ui.alerts.style.border       = style.border;
@@ -510,9 +540,9 @@
       ui.alerts.style.fontWeight   = '600';
 
       var newline = String.fromCharCode(10);
-      ui.alerts.innerText = messages.length === 1
-        ? lead + messages[0]
-        : lead + newline + '• ' + messages.join(newline + '• ');
+      ui.alerts.innerText = trouble.length
+        ? summary + newline + '• ' + trouble.join(newline + '• ')
+        : summary;
     }
 
     function storeResult(mode, measurement) {
@@ -525,6 +555,25 @@
       setFieldValue(fields.datetime,  measurement.timestamp);
       setFieldValue(fields.guid,      measurement.guid);
       setFieldValue(fields.device_id, measurement.deviceId);
+
+      // The signal-to-noise ratio of the suprasystolic capture — one number per
+      // measurement, however many blood-pressure determinations preceded it.
+      // The raw dB rather than its band label: the label is an interpretation
+      // of this number and can be recomputed, but a band that moved would leave
+      // a stored label wrong with nothing to check it against.
+      setFieldValue(fields.snr, measurement.signalQuality.snr);
+
+      // Nobody is in the room while an AOBP measurement runs, so afterwards
+      // these are the only account of how the individual determinations went.
+      // Written only when the instrument has somewhere to put them.
+      var alerts = sdk.alertsOf(measurement);
+      if (alerts.length) {
+        setFieldValue(fields.alerts, alerts.map(function (alert) {
+          return alert.readings.length
+            ? 'BP' + alert.readings.join('/') + ': ' + alert.message
+            : alert.message;
+        }).join(' | '));
+      }
 
       // The raw XML carries the base64 pressure recordings and runs to well
       // over 100 kB on an AOBP measurement. A REDCap text field will not hold
@@ -597,7 +646,7 @@
       // unusable result before it reaches here, so there is nothing to repeat.
 
       lastMeasurement = measurement;
-      showAlerts(sdk.alertsOf(measurement));
+      showAlerts(sdk.alertsOf(measurement), measurement.signalQuality);
       setStatus('normal', label + ': saving results…');
       storeResult(mode, measurement);
       renderPanel(mode, measurement);
@@ -936,30 +985,57 @@
         try {
           apiVersion = await device.readApiVersion();
           features   = await device.readFeatures();
+          showDeviceInfo();
 
-          var problems = [];
-          var shortfall = capabilityShortfall(features, apiVersion);
-          if (shortfall) problems.push(shortfall);
-          if (!deviceIsAobp()) {
-            problems.push('it is in ' + features.measureModeInfo.label +
-                          ', not BP+ AOBP');
-          }
-
-          if (problems.length) {
-            setStatus('error', 'BP+ answered, but ' + problems.join('; ') + '.');
+          // The operator has one question — can I measure now — and four
+          // possible answers, each with a different next step. Versions are not
+          // one of them: a nurse cannot act on a feature list number, and
+          // putting it on the status line invites a call to say it out loud.
+          // It goes to #device-info, which only an instrument written for a
+          // technician provides.
+          if (capabilityShortfall(features, apiVersion)) {
+            setStatus('error',
+              'This BP+ needs a software update before it can be used in this study.');
+          } else if (!deviceIsAobp()) {
+            setStatus('error', 'BP+ found, but it is not set up for this study.');
           } else {
-            setStatus('success',
-              'BP+ is live — Terminal API ' + apiVersion + ', feature list ' +
-              features.version + ', ' + features.measureModeInfo.label + '.');
+            setStatus('success', 'BP+ device found and ready.');
           }
         } catch (error) {
-          setStatus('error', 'No answer from the BP+: ' + describe(error));
-          console.error('[AOBP]', error);
+          setStatus('error', 'No answer from the BP+. Check the cable, then try again.');
+          console.error('[AOBP] ping failed', error);
         } finally {
           busy = false;
           updateButtons();
         }
       });
+    }
+
+    /**
+     * The versions and mode, for a reader who can act on them.
+     *
+     * Absent from the visit instrument on purpose. The same module serves both,
+     * and which one it is showing is decided by whether the instrument provides
+     * this element rather than by a setting.
+     */
+    function showDeviceInfo() {
+      if (!ui.info) return;
+      if (!features) { ui.info.innerText = ''; return; }
+
+      var newline = String.fromCharCode(10);
+      ui.info.style.background   = '#f1f5f9';
+      ui.info.style.border       = '1px solid #d8dee6';
+      ui.info.style.borderRadius = '8px';
+      ui.info.style.padding      = '10px 14px';
+      ui.info.style.marginTop    = '10px';
+      ui.info.style.fontFamily   = 'ui-monospace, Consolas, monospace';
+      ui.info.style.fontSize     = '13px';
+      ui.info.innerText = [
+        'Device ' + features.deviceId,
+        'Software ' + features.softwareVersion + ' · firmware ' + features.firmwareVersion,
+        'Feature list ' + features.version + ' · Terminal API ' + (apiVersion || 'unknown'),
+        'Mode ' + features.measureModeInfo.label,
+      ].join(newline);
     }
 
     if (ui.cancel) {

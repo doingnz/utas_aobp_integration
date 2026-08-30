@@ -132,6 +132,7 @@ The module looks for these elements on the AOBP instrument:
 | `#ping-bp-btn` | Optional. Confirms the link is live and the device still usable |
 | `#visit-state` | Optional. What the record still needs, and whether it may be submitted |
 | `#alerts-display` | Optional. What the device said was wrong, in its own words |
+| `#device-info` | Optional. Versions and mode, for a technical instrument |
 | `#status-display` | The single large status line |
 | `#seated-results-panel` | Filled after the seated measurement |
 | `#standing-results-panel` | Filled after the standing measurement |
@@ -147,6 +148,8 @@ and fills these fields:
 | Timestamp | `seated_datetime` | `standing_datetime` |
 | Measurement GUID | `seated_guid` | `standing_guid` |
 | Device ID | `seated_bpplus_device_id` | `standing_bpplus_device_id` |
+| Signal-to-noise ratio | `seated_snr` | `standing_snr` |
+| Per-reading alerts | `seated_alerts` | `standing_alerts` |
 | Raw XML | `seated_raw_xml_text` | `standing_raw_xml_text` |
 
 Two control fields: `sys_standing_required` — set to `1` to ask for a standing
