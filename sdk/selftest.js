@@ -583,10 +583,10 @@ async function usbSerialAndDetection() {
     unusableReason(brachial(0, 0, 0), range)?.code === ResultCode.measurementBPOutOfRange,
     JSON.stringify(unusableReason(brachial(0, 0, 0), range)));
 
-  check('result: below the device's own minimum is refused',
+  check('result: below the declared minimum is refused',
     unusableReason(brachial(35, 20), range)?.code === ResultCode.measurementBPOutOfRange);
 
-  check('result: above the device's own maximum is refused',
+  check('result: above the declared maximum is refused',
     unusableReason(brachial(300, 90), range)?.code === ResultCode.measurementBPOutOfRange);
 
   check('result: systolic not above diastolic is refused',
@@ -789,8 +789,13 @@ async function endToEnd() {
       check('device: a failed measurement rejects', false, 'it resolved instead');
     } catch (err) {
       equal('device: rejects with the device result code', err.code, ResultCode.nibpDeviceError);
-      check('device: the error carries a readable message',
-        /NIBP device error/i.test(err.message), err.message);
+      // Not the exact wording, which is allowed to improve. What must hold is
+      // that the code has an entry at all: RESULT_CODE_TEXT falls back to "The
+      // device reported result code nn", and an edit that deletes a line from
+      // that table shows up on a bench as a number where a sentence should be.
+      check('device: the error carries a sentence, not a bare code',
+        !/reported result code/i.test(err.message) && err.message.length > 20,
+        err.message);
     }
 
     // A measurement reports its outcome exactly once: one F, then one M 02.

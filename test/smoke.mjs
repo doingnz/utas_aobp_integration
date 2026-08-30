@@ -31,6 +31,40 @@ function check(name, ok, detail = '') {
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail && !ok ? '   ' + detail : ''}`);
 }
 
+// ── Does every SDK module parse? ─────────────────────────────────────────────
+// `node --check` does not parse a .js file as ESM, so it passes a module with a
+// syntax error in it. A stray apostrophe in sdk/selftest.js reached the tablet
+// that way and surfaced as "could not run: missing ) after argument list" when
+// the operator pressed the self-test button. Importing each module is the only
+// check that means anything.
+
+console.log('\nSDK modules parse');
+
+{
+  const dir = new URL('../sdk/', import.meta.url);
+  const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(entry =>
+    entry.isDirectory()
+      ? walk(new URL(entry.name + '/', d))
+      : (entry.name.endsWith('.js') ? [new URL(entry.name, d)] : []));
+
+  const modules = walk(dir);
+  let broken = 0;
+
+  for (const url of modules) {
+    try {
+      await import(url);
+    } catch (error) {
+      // A module that needs a DOM is not a parse failure; a SyntaxError is.
+      if (error instanceof SyntaxError) {
+        broken++;
+        console.log(`  FAIL  ${url.pathname.split('/sdk/')[1]} — ${error.message}`);
+      }
+    }
+  }
+
+  check(`all ${modules.length} SDK modules parse`, broken === 0);
+}
+
 // ── Does the module initialise? ──────────────────────────────────────────────
 
 async function loadJsdom() {
