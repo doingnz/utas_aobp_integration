@@ -160,6 +160,24 @@ sets to `complete` when the visit is done.
 (`opt-<field>_1` / `_0`) rather than setting a value. That is the only way REDCap
 records the choice.
 
+### Starting a measurement on the device itself
+
+A BP+ has its own Start button, and a measurement begun there carries no patient
+ID and belongs to no record. The device stores it all the same, so it is not
+harmless: it leaves an unattributed reading in the device's file list, taken
+outside the protocol.
+
+While connected and not measuring, the module watches the device's mode. Walking
+into the AOBP menu (`M 23`) is reported to the operator; a measurement actually
+starting (`M 22` countdown, or `M 03`) is cancelled, once per episode. The
+module's own measurements are excluded by state rather than by timing, so the
+identical modes that follow its own `s` command pass through untouched.
+
+The SDK provides this as `new BpPlusDevice(transport, { hostStartedOnly: true })`
+and it is off by default there — a tool that watches a device should not
+interfere with it — but every measurement in this study has to come from the
+survey page, so the module turns it on.
+
 ### Operator flow
 
 Connect, then **Start seated**. If `sys_standing_required` is `1` the module

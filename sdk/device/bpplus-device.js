@@ -19,6 +19,8 @@
  *   progress   {phase, ...}  — XML receive, AOBP rest period
  *   log        {dir: 'tx'|'rx', text, at}  — every line, for a trace pane
  *   warning    {message}     — non-fatal, e.g. a checksum mismatch
+ *   deviceStarted {mode, cancelling}  — someone pressed Start on the device;
+ *                only with hostStartedOnly, see _refuseDeviceStart()
  *   error      BpPlusError   — something failed outside a pending request
  *
  * Failures reject with a BpPlusError carrying the Table 5 code, so a caller
@@ -66,12 +68,32 @@ const PWA_SECONDS = 180;
  */
 const POST_RESULT_GRACE_MS = 2000;
 
+/**
+ * Modes that mean a measurement is starting or running on the device.
+ *
+ * countDownAobp is the AOBP rest period — the trace shows M 22 immediately
+ * after `s` — and measuringBp is the cuff on the arm. Either seen while the
+ * host is not measuring means somebody pressed Start on the device itself.
+ */
+const MEASUREMENT_UNDERWAY_MODES = Object.freeze([
+  DeviceMode.countDownAobp,
+  DeviceMode.measuringBp,
+]);
+
+/** Modes that mean the device is back at rest, so an episode has ended. */
+const AT_REST_MODES = Object.freeze([DeviceMode.ready, DeviceMode.offline]);
+
 export class BpPlusDevice extends Emitter {
 
   /**
    * @param {import('../transports/transport.js').Transport} transport
    * @param {object} [options]
    * @param {number} [options.detailLevel]  4 (XML) by default; 0 gives S lines
+   * @param {boolean} [options.hostStartedOnly]
+   *        cancel any measurement the device starts by itself. Off by default,
+   *        because a tool that watches a device should not interfere with it —
+   *        but any host that records against a patient ID needs it on. See
+   *        _refuseDeviceStart().
    */
   constructor(transport, options = {}) {
     super();
@@ -82,6 +104,8 @@ export class BpPlusDevice extends Emitter {
     this._lastMode    = null;
     this._features    = null;
     this._awaitingVerdict = false;
+    this._hostStartedOnly = options.hostStartedOnly === true;
+    this._refusing        = false;
 
     this._session.on('mode',     m => this._handleMode(m));
     this._session.on('pressure', p => this.emit('pressure', p));
@@ -141,6 +165,53 @@ export class BpPlusDevice extends Emitter {
   _handleMode(mode) {
     this._lastMode = mode;
     this.emit('mode', mode);
+    if (this._hostStartedOnly) this._refuseDeviceStart(mode);
+  }
+
+  /**
+   * Stop a measurement nobody asked this SDK for.
+   *
+   * A BP+ has its own Start button, and a measurement begun there carries no
+   * patient ID and belongs to no record. The reading is real and the device
+   * stores it, so it is not harmless: it is an unattributed measurement in the
+   * device's file list that a host cannot match to anyone, and on a study
+   * instrument it is a measurement taken outside the protocol.
+   *
+   * The host's own measurements are excluded by state rather than by timing —
+   * measure() sets `measuring` before it sends `s`, so the M 22 and M 03 that
+   * follow are already accounted for.
+   *
+   * Nothing is sent for the AOBP menu itself. There is no measurement to cancel
+   * while the operator is still choosing, and `c` would only draw an F 22. The
+   * event is emitted so a host can say something before they press Start; the
+   * cancel follows if they do.
+   */
+  _refuseDeviceStart(mode) {
+    if (!this.isConnected || this.isMeasuring) return;
+
+    if (AT_REST_MODES.includes(mode.code)) {
+      this._refusing = false;             // the episode is over
+      return;
+    }
+
+    const underway = MEASUREMENT_UNDERWAY_MODES.includes(mode.code);
+    if (!underway && mode.code !== DeviceMode.selectAobpMode) return;
+
+    // One refusal per episode: M 23, M 22 and M 03 can arrive in sequence for a
+    // single press, and three cancels would be two too many.
+    if (this._refusing) return;
+    if (underway) this._refusing = true;
+
+    this.emit('deviceStarted', { mode, cancelling: underway });
+
+    if (!underway) return;
+
+    this.cancel().catch(error => {
+      this.emit('warning', {
+        message: 'A measurement was started on the device and could not be ' +
+                 'cancelled: ' + error.message,
+      });
+    });
   }
 
   // ── Connection ────────────────────────────────────────────────────────────

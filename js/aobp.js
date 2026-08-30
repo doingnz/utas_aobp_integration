@@ -213,9 +213,24 @@
       var api = await loadSdk();
 
       var transport = makeTransport(api);
-      device = new api.BpPlusDevice(transport);
+      // A measurement started on the device carries no patient ID and belongs
+      // to no record, so the module refuses it. Every measurement in this study
+      // has to come from this page.
+      device = new api.BpPlusDevice(transport, { hostStartedOnly: true });
 
       device.on('warning', function (w) { console.warn('[AOBP]', w.message); });
+
+      device.on('deviceStarted', function (event) {
+        console.warn('[AOBP] measurement started on the device (' +
+                     event.mode.name + '); ' +
+                     (event.cancelling ? 'cancelling it' : 'watching'));
+        setStatus('error', event.cancelling
+          ? 'That measurement was started on the BP+ itself and has been ' +
+            'stopped. Use the buttons on this page, so the reading is saved ' +
+            'against the right participant.'
+          : 'Please start the measurement from this page rather than from the ' +
+            'BP+, so the reading is saved against the right participant.');
+      });
       device.on('log', function (entry) {
         if (window.AOBP_CONFIG && window.AOBP_CONFIG.trace) {
           console.log('[AOBP] ' + (entry.dir === 'tx' ? '>' : '<'), entry.text);

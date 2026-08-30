@@ -20,7 +20,9 @@ import {
   alertsOf,
   classifyAlert,
 } from '../sdk/device/measurement.js';
-import { ResultCode } from '../sdk/constants.js';
+import { ResultCode, DeviceMode } from '../sdk/constants.js';
+import { BpPlusDevice } from '../sdk/device/bpplus-device.js';
+import { SimulatorTransport } from '../sdk/transports/simulator.js';
 
 let failures = 0;
 
@@ -177,6 +179,63 @@ check('a fault has no quality label',
   classifyAlert('Unable to measure BP: Over Pressure (C19)').quality === null);
 check('severity rides along on a parsed alert',
   parseAlerts('Excellent Signal;AABB;')[0]?.severity === 'good');
+
+// ── A measurement started on the device is refused ───────────────────────────
+// The BP+ has its own Start button. A measurement begun there carries no
+// patient ID and belongs to no record, so a host that records against a
+// participant has to stop it.
+
+console.log('\nhost-started-only');
+
+{
+  const device = new BpPlusDevice(new SimulatorTransport(), { hostStartedOnly: true });
+  await device.connect();
+
+  const cancels = [];
+  device.cancel = async () => { cancels.push(1); };
+
+  const seen = [];
+  device.on('deviceStarted', e => seen.push(e));
+
+  const mode = code => device._handleMode({ code, name: 'm' + code });
+
+  // Somebody walks the device into the AOBP menu and presses Start.
+  mode(DeviceMode.selectAobpMode);
+  check('the AOBP menu is noticed', seen.length === 1);
+  check('but nothing is cancelled while they are still choosing',
+    cancels.length === 0 && seen[0]?.cancelling === false);
+
+  mode(DeviceMode.countDownAobp);
+  check('the countdown is cancelled', cancels.length === 1);
+
+  mode(DeviceMode.measuringBp);
+  check('the modes that follow do not cancel again', cancels.length === 1);
+
+  mode(DeviceMode.ready);
+  mode(DeviceMode.countDownAobp);
+  check('a second press is cancelled too', cancels.length === 2);
+
+  // The host's own measurement must pass through untouched. measure() sets the
+  // state before it sends `s`, so the same modes arrive with measuring set.
+  device._setState('measuring');
+  const before = cancels.length;
+  mode(DeviceMode.countDownAobp);
+  mode(DeviceMode.measuringBp);
+  check("the host's own measurement is left alone", cancels.length === before);
+
+  await device.disconnect();
+}
+
+{
+  const device = new BpPlusDevice(new SimulatorTransport());
+  await device.connect();
+  const cancels = [];
+  device.cancel = async () => { cancels.push(1); };
+  device._handleMode({ code: DeviceMode.countDownAobp, name: 'm22' });
+  check('off by default, so a monitoring tool does not interfere',
+    cancels.length === 0);
+  await device.disconnect();
+}
 
 console.log(failures ? `\n${failures} FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);
