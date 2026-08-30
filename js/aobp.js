@@ -87,6 +87,16 @@
 
   // What a BP+ must report before it can take a seated or standing measurement.
   // Body position is the 5th parameter of `s`; older firmware answers F 14.
+  // Module scope on purpose. updateButtons() runs as the first thing start()
+  // does, before any `var` inside it has been assigned — putting this there
+  // made renderVisitState() read a property of undefined and took the whole
+  // module down before window.AOBP was set.
+  var VISIT_STYLES = {
+    waiting:    { background: '#f8f9fa', border: '1px solid #dee2e6', color: '#5d6b7a' },
+    incomplete: { background: '#fff8e1', border: '1px solid #ffe082', color: '#8a6100' },
+    complete:   { background: '#d8f3dc', border: '1px solid #b7e4c7', color: '#2d6a4f' },
+  };
+
   var MIN_FEATURE_VERSION = '3.0';   // the feature schema carrying measureMode
   var MIN_API_VERSION     = '2.4';   // the command set accepting body position
 
@@ -742,17 +752,11 @@
      * anything remains — which is exactly the moment a visit gets submitted
      * half-finished.
      */
-    var VISIT_STYLES = {
-      waiting:    { background: '#f8f9fa', border: '1px solid #dee2e6', color: '#5d6b7a' },
-      incomplete: { background: '#fff8e1', border: '1px solid #ffe082', color: '#8a6100' },
-      complete:   { background: '#d8f3dc', border: '1px solid #b7e4c7', color: '#2d6a4f' },
-    };
-
     function renderVisitState() {
       if (!ui.visit) return;
 
       var state = visitStateText();
-      var style = VISIT_STYLES[state.kind];
+      var style = VISIT_STYLES[state.kind] || VISIT_STYLES.waiting;
 
       ui.visit.style.background   = style.background;
       ui.visit.style.border       = style.border;
