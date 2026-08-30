@@ -615,10 +615,13 @@ export function parseAlerts(text) {
  * appeared on, and is empty for a single measurement's own Alert.
  *
  * @param {BpPlusMeasurement|object} result
+ * @param {object|null} [bpRange]  from BpPlusFeatures.bpRange, so a fault on a
+ *        determination that succeeded anyway can be told from one that did not
  * @returns {Array<{message: string, tm2917_hex_result: string|null,
- *                  severity: string, quality: string|null, readings: number[]}>}
+ *                  severity: string, quality: string|null, readings: number[],
+ *                  recovered: boolean}>}
  */
-export function alertsOf(result) {
+export function alertsOf(result, bpRange = null) {
   if (!result) return [];
 
   const found = [];
@@ -627,8 +630,17 @@ export function alertsOf(result) {
   for (let i = 0; i < list.length; i++) {
     const reading = list[i];
     if (!reading || !reading.alert) continue;
+
+    // The TM2917 retries a determination it could not complete, up to three
+    // times, and when a later attempt succeeds it records the good values and
+    // leaves the failed attempt's Alert in place. So the alert on a
+    // determination that produced usable numbers describes something the module
+    // recovered from — a warning — and the identical text on one that produced
+    // nothing is an error. Severity is contextual, not lexical.
+    const recovered = unusableReason({ brachial: reading }, bpRange) === null;
+
     for (const alert of parseAlerts(reading.alert)) {
-      found.push({ alert, reading: i + 1 });
+      found.push({ alert, reading: i + 1, recovered });
     }
   }
 
@@ -638,21 +650,32 @@ export function alertsOf(result) {
     const single = typeof result.alert === 'string'
       ? result.alert
       : (typeof result.value === 'function' ? result.value('Alert') : null);
-    for (const alert of parseAlerts(single)) found.push({ alert, reading: null });
+    for (const alert of parseAlerts(single)) {
+      found.push({ alert, reading: null, recovered: false });
+    }
   }
 
   const byMessage = new Map();
 
-  for (const { alert, reading } of found) {
+  for (const { alert, reading, recovered } of found) {
+    // A quality word keeps the severity its text carries. A fault is softened
+    // to a warning only where the determination it sits on succeeded anyway.
+    const severity = alert.quality || !recovered ? alert.severity : 'caution';
+
     const existing = byMessage.get(alert.message);
     if (existing) {
       if (reading !== null && !existing.readings.includes(reading)) {
         existing.readings.push(reading);
       }
+      // The same text on a determination that failed is the worse case.
+      if (severity === 'bad') existing.severity = 'bad';
+      existing.recovered = existing.recovered && recovered;
       continue;
     }
     byMessage.set(alert.message, {
       ...alert,
+      severity,
+      recovered,
       readings: reading === null ? [] : [reading],
     });
   }

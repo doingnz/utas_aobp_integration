@@ -113,6 +113,7 @@ BP+** differs — a port list on desktop, a USB device list on a tablet.
 | Instrument that carries the AOBP controls | `aobp_visit` | Where the buttons live |
 | Instrument that uses the collapsible information panels | `info` | Optional, for `js/info.js` |
 | Set the device clock when it is out by more than *n* minutes | 5 | See **The device clock** |
+| Hide warnings on measurements that succeeded | off | The device retries and recovers; see below |
 | Store the raw measurement XML as a file | off | See **The raw XML** |
 | Log every serial line to the browser console | off | Troubleshooting only |
 
@@ -177,6 +178,28 @@ The SDK provides this as `new BpPlusDevice(transport, { hostStartedOnly: true })
 and it is off by default there — a tool that watches a device should not
 interfere with it — but every measurement in this study has to come from the
 survey page, so the module turns it on.
+
+### A warning on a measurement that worked
+
+The NIBP module retries a determination it could not finish, up to three times.
+When a later attempt succeeds it records the good values and **leaves the failed
+attempt's `<Alert>` in place**, so a perfectly good reading can carry what looks
+like an error.
+
+Severity is therefore contextual rather than lexical. The same alert text means:
+
+| On a determination that | Shown as |
+|---|---|
+| produced values inside the device's `<bpRange>` | amber — recovered |
+| produced nothing usable | red — a real failure |
+
+`sys_alerts` records it either way. **Hide warnings on measurements that
+succeeded** only decides whether the operator sees the amber case: it is a real
+signal — a participant needing two attempts every visit, a cuff failing
+intermittently — but it is also a warning over a good reading, which invites a
+repeat nobody needs. Off by default, so the warning is shown.
+
+See also task 25 in the BP+ knowledge base, which is the firmware side of this.
 
 ### Operator flow
 

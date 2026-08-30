@@ -180,6 +180,45 @@ check('a fault has no quality label',
 check('severity rides along on a parsed alert',
   parseAlerts('Excellent Signal;AABB;')[0]?.severity === 'good');
 
+// ── A stale alert on a determination that succeeded ─────────────────────────
+// The TM2917 retries up to three times and, when a later attempt works, records
+// the good values while leaving the failed attempt's Alert in place. The same
+// text therefore means different things depending on what the determination
+// produced.
+
+console.log('\nrecovered retries');
+
+{
+  const fault = 'Unable to measure BP: Over Pressure (C19);AA;';
+  const good = alertsOf({ readings: [{ sys: 122, dia: 78, pr: 70, alert: fault }] }, range);
+  const bad  = alertsOf({ readings: [{ sys: 0, dia: 0, pr: 0, alert: fault }] }, range);
+
+  check('a fault on a determination that produced numbers is a warning',
+    good[0]?.severity === 'caution', JSON.stringify(good[0]?.severity));
+  check('and is marked as recovered', good[0]?.recovered === true);
+  check('the same fault on one that produced nothing stays an error',
+    bad[0]?.severity === 'bad');
+  check('and is not marked as recovered', bad[0]?.recovered === false);
+
+  // Both cases in one run: the worse one must win for the shared message.
+  const mixed = alertsOf({ readings: [
+    { sys: 122, dia: 78, pr: 70, alert: fault },
+    { sys: 0, dia: 0, pr: 0, alert: fault },
+  ] }, range);
+  check('one determination failing makes the shared alert an error',
+    mixed[0]?.severity === 'bad');
+  check('and it names both determinations',
+    mixed[0]?.readings.join(',') === '1,2');
+
+  check('a quality word is never softened by a good reading',
+    alertsOf({ readings: [{ sys: 122, dia: 78, pr: 70, alert: 'Invalid Signal;AA;' }] },
+      range)[0]?.severity === 'bad');
+
+  check('without a bpRange nothing is assumed recovered',
+    alertsOf({ readings: [{ sys: 122, dia: 78, pr: 70, alert: fault }] }, null)[0]
+      ?.severity === 'caution');
+}
+
 // ── A measurement started on the device is refused ───────────────────────────
 // The BP+ has its own Start button. A measurement begun there carries no
 // patient ID and belongs to no record, so a host that records against a

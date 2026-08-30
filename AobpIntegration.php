@@ -190,6 +190,9 @@ class AobpIntegration extends AbstractExternalModule
             'trace'           => (bool) $this->getProjectSetting('aobp-trace'),
             'autoAdvanceStanding' => (bool) $this->getProjectSetting('aobp-auto-advance-standing'),
             'autoAdvanceSeconds'  => $this->autoAdvanceSeconds(),
+            // Default on: a warning shown needlessly is recoverable, one
+            // withheld is not.
+            'detailedWarnings' => $this->getProjectSetting('aobp-hide-recovered-warnings') ? false : true,
         ];
 
         // json_encode with the HEX_* flags escapes everything that could close

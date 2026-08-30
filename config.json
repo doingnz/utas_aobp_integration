@@ -41,6 +41,11 @@
       "required": false
     },
     {
+      "key": "aobp-hide-recovered-warnings",
+      "name": "Hide warnings on measurements that succeeded (the device retried and recovered). They are recorded either way",
+      "type": "checkbox"
+    },
+    {
       "key": "aobp-save-xml-file",
       "name": "Store the raw measurement XML as a file on the record (needs seated_raw_xml / standing_raw_xml file-upload fields)",
       "type": "checkbox"

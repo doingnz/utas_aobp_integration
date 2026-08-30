@@ -496,10 +496,21 @@
      * the module's raw reply: it belongs in the console and in a support
      * report, and means nothing to the person holding the cuff.
      */
-    function showAlerts(alerts, quality) {
+    function showAlerts(alerts, quality, succeeded) {
       if (!ui.alerts) return;
 
       var list = alerts || [];
+
+      // A measurement that succeeded has already said so. Whether it also
+      // reports what it recovered from on the way is a study's choice: it is a
+      // real signal — a participant who needs two attempts every visit, a cuff
+      // failing intermittently — and it is also a warning over a good reading,
+      // which invites a repeat nobody needs. On either setting it is still
+      // written to the record; this only decides what the operator sees.
+      var cfg = window.AOBP_CONFIG || {};
+      if (succeeded && cfg.detailedWarnings === false) {
+        list = list.filter(function (alert) { return alert.severity === 'good'; });
+      }
       if (!list.length && !(quality && quality.known)) {
         ui.alerts.style.display = 'none';
         ui.alerts.innerText = '';
@@ -618,7 +629,7 @@
         return false;
       }
 
-      showAlerts([]);
+      showAlerts([], null, false);
       setStatus('normal', label + ': measuring — keep the arm still.');
 
       // Cancel is live only while the cuff is on the arm. A participant who
@@ -632,7 +643,7 @@
         measurement = await measure(mode);
       } catch (error) {
         setStatus('error', label + ': ' + describe(error));
-        showAlerts(error.alerts);
+        showAlerts(error.alerts, null, false);
         console.error('[AOBP]', error);
         return false;
       } finally {
@@ -661,7 +672,8 @@
       // unusable result before it reaches here, so there is nothing to repeat.
 
       lastMeasurement = measurement;
-      showAlerts(sdk.alertsOf(measurement), measurement.signalQuality);
+      showAlerts(sdk.alertsOf(measurement, features && features.bpRange),
+                 measurement.signalQuality, true);
       setStatus('normal', label + ': saving results…');
       storeResult(mode, measurement);
       renderPanel(mode, measurement);

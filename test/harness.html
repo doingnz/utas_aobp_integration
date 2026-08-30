@@ -133,6 +133,14 @@
     </label>
     <input type="hidden" name="sys_standing_required" id="sys_standing_required" value="0">
 
+    <!-- On by default. The TM2917 retries a determination it could not finish,
+         and leaves the failed attempt's alert on the reading it then succeeded
+         with — so a good measurement can carry a warning. Recorded either way;
+         this only decides whether the operator is shown it. -->
+    <label for="detailed-warnings-cb" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="checkbox" id="detailed-warnings-cb" checked> Detailed warnings
+    </label>
+
     <!-- Defaults ON so the harness out of the box behaves the way
          aobp_integration_v1.0.1 does: standing follows seated on a timer. The
          module's own default is OFF, so this is the harness deliberately opting
@@ -276,12 +284,13 @@ window.AOBP_CONFIG = {
   event_id: '1',
   repeat_instance: '1',
   pid: '0',
-  sdkUrl: new URL('../sdk/index.js?v=1.5.1', location.href).href,
+  sdkUrl: new URL('../sdk/index.js?v=1.6.0', location.href).href,
   saveXmlAsFile: false,          // no server here to receive it
   clockToleranceMinutes: 5,
   trace: true,
   autoAdvanceStanding: true,   // matches v1.0.1; the module's own default is false
   autoAdvanceSeconds: 3,
+  detailedWarnings: true,
 };
 document.getElementById('tolerance').addEventListener('input', function () {
   window.AOBP_CONFIG.clockToleranceMinutes = Number(this.value);
@@ -293,7 +302,7 @@ document.getElementById('record').addEventListener('input', function () {
 
 <!-- ?v= must match BUILD in the module script below. A query string is the only
      reliable way to force a tablet past a cached copy of the module. -->
-<script src="../js/aobp.js?v=1.5.1"></script>
+<script src="../js/aobp.js?v=1.6.0"></script>
 
 <script type="module">
 import * as sdk from '../sdk/index.js';
@@ -303,7 +312,7 @@ const $ = id => document.getElementById(id);
 // ── Build stamp ────────────────────────────────────────────────────────────
 // Bump this on every upload, and keep the ?v= on the aobp.js script tag and on
 // AOBP_CONFIG.sdkUrl in step with it.
-const BUILD = '1.5.1';
+const BUILD = '1.6.0';
 const BUILT = '2026-08-30';
 
 (function showBuild() {
@@ -427,6 +436,11 @@ syncTransportUi();
 // A checkbox's .value is its value attribute whether or not it is checked, so
 // the checkbox drives a hidden field rather than being read directly. The
 // module reads that field with .value, exactly as it would in REDCap.
+$('detailed-warnings-cb').addEventListener('change', function () {
+  window.AOBP_CONFIG.detailedWarnings = this.checked;
+  console.log('[harness] detailedWarnings = ' + this.checked);
+});
+
 $('auto-advance-cb').addEventListener('change', function () {
   window.AOBP_CONFIG.autoAdvanceStanding = this.checked;
   console.log('[harness] autoAdvanceStanding = ' + this.checked);
