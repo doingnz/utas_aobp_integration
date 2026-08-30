@@ -444,58 +444,6 @@
     }
 
     /**
-     * Why this result cannot be recorded, or null when it can.
-     *
-     * The presence of a number is not a measurement. A run that never completed
-     * a determination — the hose kinked, the device retried, the third attempt
-     * over-pressured and aborted — can still return a result block, and a zero
-     * or a stray value in it would pass any test that only asks whether a field
-     * was filled in.
-     *
-     * The bounds are the device's own, from <bpRange> in the feature list, so
-     * this rejects what the hardware itself says it cannot have measured rather
-     * than what seems unlikely here. A device that does not declare them is
-     * given the benefit of the doubt on range, but must still have produced a
-     * pressure at all.
-     */
-    function whyUnusable(measurement) {
-      var bp = measurement.brachial;
-
-      if (bp.sys === null || bp.dia === null) {
-        return 'the device did not return a blood pressure';
-      }
-
-      var range = features && features.bpRange;
-      var outside = [];
-
-      if (range) {
-        if (beyond(bp.sys, range.sys)) outside.push('systolic ' + bp.sys);
-        if (beyond(bp.dia, range.dia)) outside.push('diastolic ' + bp.dia);
-        if (bp.pr !== null && beyond(bp.pr, range.hr)) outside.push('heart rate ' + bp.pr);
-      }
-
-      if (outside.length) {
-        return 'the result is outside what this BP+ can measure (' +
-               outside.join(', ') + ')';
-      }
-
-      // Cheap, and true of every real reading. A run that aborted can report a
-      // pair that is individually in range and still cannot be a pressure.
-      if (bp.sys <= bp.dia) {
-        return 'the result is not a blood pressure (systolic ' + bp.sys +
-               ' is not above diastolic ' + bp.dia + ')';
-      }
-
-      return null;
-    }
-
-    /** Outside the device's declared min..max for this value. */
-    function beyond(value, limits) {
-      if (!limits || !isFinite(limits.min) || !isFinite(limits.max)) return false;
-      return value < limits.min || value > limits.max;
-    }
-
-    /**
      * Whatever the device said was wrong, as ' (…)' or ''.
      *
      * The per-reading Alert is the device's own account of why a determination
@@ -590,15 +538,9 @@
       // readings into the record, reported "Seated assessment complete", and
       // left the operator with every button disabled and no way back except
       // reloading the page.
-      var unusable = whyUnusable(measurement);
-      if (unusable) {
-        setStatus('error',
-          label + ': ' + unusable + alertText(measurement) +
-          '. Check the cuff and the hose for a kink, then repeat the ' +
-          'measurement.');
-        console.error('[AOBP] unusable result: ' + unusable, measurement);
-        return false;
-      }
+      // Whether the result is a reading at all is the SDK's judgement, made
+      // against the device's own declared ranges — device.measure() rejects an
+      // unusable result before it reaches here, so there is nothing to repeat.
 
       lastMeasurement = measurement;
       setStatus('normal', label + ': saving results…');
@@ -659,6 +601,15 @@
         if (sdk && error.code === sdk.ResultCode.cancelled) {
           return 'the measurement was cancelled at the device. Press start to try again.';
         }
+
+        // A result the device produced but that is not a reading: the cuff and
+        // the hose are what the operator can actually do something about.
+        if (sdk && (error.code === sdk.ResultCode.measurementDataInvalid ||
+                    error.code === sdk.ResultCode.measurementBPOutOfRange)) {
+          return error.message +
+                 ' Check the cuff and the hose for a kink, then repeat the measurement.';
+        }
+
         return error.message;
       }
       return error.message || String(error);

@@ -24,6 +24,7 @@ import { UsbSerialTransport } from './transports/usb-serial.js';
 import { Pl2303Driver, USB_SERIAL_DRIVERS, allUsbSerialFilters }
   from './transports/usb-serial-drivers.js';
 import { recommendedTransport, TransportKind } from './transports/detect.js';
+import { unusableReason } from './device/measurement.js';
 import { buildFeatureWrite, repairFeatureXml } from './device/features.js';
 import { eraseSilenceMs, toBase64 } from './device/firmware-update.js';
 import { MeasureMode, ResultCode } from './constants.js';
@@ -563,6 +564,43 @@ async function usbSerialAndDetection() {
   equal('detect: nothing available reports no transport', none.kind, null);
   check('detect: an insecure context is named as the likely cause',
     /secure context/.test(none.reason), none.reason);
+
+  // ── Is a result a reading? ──────────────────────────────────────────────
+  // A result block is not proof a determination happened. Measured on a BP+
+  // whose hose was kinked: the device retried, aborted the third attempt on
+  // over-pressure, and still returned a well-formed block carrying zeros.
+  const range = { sys: {max:280,min:40}, dia: {max:200,min:20},
+                  map: {max:245,min:25}, hr: {max:240,min:30} };
+  const brachial = (sys, dia, pr = 70) => ({ brachial: { sys, dia, pr } });
+
+  equal('result: a real reading is usable',
+    unusableReason(brachial(122, 78), range), null);
+
+  check('result: no pressure at all is refused',
+    unusableReason(brachial(null, null), range)?.code === ResultCode.measurementDataInvalid);
+
+  check('result: the zeros an aborted run returns are refused',
+    unusableReason(brachial(0, 0, 0), range)?.code === ResultCode.measurementBPOutOfRange,
+    JSON.stringify(unusableReason(brachial(0, 0, 0), range)));
+
+  check('result: below the device's own minimum is refused',
+    unusableReason(brachial(35, 20), range)?.code === ResultCode.measurementBPOutOfRange);
+
+  check('result: above the device's own maximum is refused',
+    unusableReason(brachial(300, 90), range)?.code === ResultCode.measurementBPOutOfRange);
+
+  check('result: systolic not above diastolic is refused',
+    unusableReason(brachial(100, 100), range)?.code === ResultCode.measurementDataInvalid);
+
+  equal('result: at the declared limits is usable',
+    unusableReason(brachial(280, 21, 240), range), null);
+
+  // Without a feature list there is nothing to range-check against, but a
+  // result still has to carry a pressure.
+  equal('result: no bpRange still accepts a plausible reading',
+    unusableReason(brachial(122, 78), null), null);
+  check('result: no bpRange still refuses an empty result',
+    unusableReason(brachial(null, null), null)?.code === ResultCode.measurementDataInvalid);
 
   // ── The driver registry ─────────────────────────────────────────────────
   check('usb: the Prolific driver is registered',

@@ -23,7 +23,7 @@
  */
 
 import { receiveError } from '../core/errors.js';
-import { describeSignalQuality, describeRhythm } from '../constants.js';
+import { describeSignalQuality, describeRhythm, ResultCode } from '../constants.js';
 
 export class BpPlusMeasurement {
 
@@ -435,4 +435,73 @@ function medianOfFirst(values, n) {
   head.sort((a, b) => a - b);
   const mid = head.length >> 1;
   return head.length % 2 ? head[mid] : (head[mid - 1] + head[mid]) / 2;
+}
+
+
+// ── Is this result a reading? ────────────────────────────────────────────────
+
+/**
+ * Why a result cannot be used as a measurement, or null when it can.
+ *
+ * A result block is not proof that a determination happened. A run that never
+ * completed one — the hose kinked, the device retried, the last attempt aborted
+ * on over-pressure — still returns a well-formed block, and it carried zeros in
+ * the case this was written for. Anything that asks only whether a field was
+ * filled in accepts that.
+ *
+ * The bounds are the device's own, from `<bpRange>` in the feature list, so
+ * this rejects what the hardware says it cannot have measured rather than what
+ * looks unlikely. Pass null for `bpRange` and only the checks that need no
+ * device knowledge are applied.
+ *
+ * Works on both result shapes: a BpPlusMeasurement and the plain object
+ * parseSummaryLine() returns both expose `brachial`.
+ *
+ * @param {BpPlusMeasurement|object} result
+ * @param {{sys, dia, map, hr}|null} [bpRange]  from BpPlusFeatures.bpRange
+ * @returns {{code: number, message: string}|null}
+ */
+export function unusableReason(result, bpRange = null) {
+  const bp = result && result.brachial;
+
+  if (!bp || bp.sys === null || bp.sys === undefined ||
+             bp.dia === null || bp.dia === undefined) {
+    return {
+      code: ResultCode.measurementDataInvalid,
+      message: 'The device did not return a blood pressure.',
+    };
+  }
+
+  if (bpRange) {
+    const outside = [];
+    if (beyondRange(bp.sys, bpRange.sys)) outside.push(`systolic ${bp.sys}`);
+    if (beyondRange(bp.dia, bpRange.dia)) outside.push(`diastolic ${bp.dia}`);
+    if (bp.pr !== null && bp.pr !== undefined && beyondRange(bp.pr, bpRange.hr)) {
+      outside.push(`heart rate ${bp.pr}`);
+    }
+
+    if (outside.length) {
+      return {
+        code: ResultCode.measurementBPOutOfRange,
+        message: `The result is outside what this device can measure (${outside.join(', ')}).`,
+      };
+    }
+  }
+
+  // Needs no device knowledge, and no real reading fails it. An aborted run can
+  // produce a pair that is individually in range and still is not a pressure.
+  if (bp.sys <= bp.dia) {
+    return {
+      code: ResultCode.measurementDataInvalid,
+      message: `The result is not a blood pressure (systolic ${bp.sys} is not above diastolic ${bp.dia}).`,
+    };
+  }
+
+  return null;
+}
+
+/** Outside the device's declared min..max for this value. */
+function beyondRange(value, limits) {
+  if (!limits || !Number.isFinite(limits.min) || !Number.isFinite(limits.max)) return false;
+  return value < limits.min || value > limits.max;
 }

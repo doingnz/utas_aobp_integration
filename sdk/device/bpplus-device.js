@@ -38,7 +38,7 @@ import {
   describeMode,
   isFailureCode,
 } from '../constants.js';
-import { BpPlusMeasurement } from './measurement.js';
+import { BpPlusMeasurement, unusableReason } from './measurement.js';
 import { BpPlusFeatures, buildFeatureWrite } from './features.js';
 import { FirmwareUpdateJob } from './firmware-update.js';
 
@@ -334,14 +334,30 @@ export class BpPlusDevice extends Emitter {
         throw new BpPlusError(failure.code, { command: line });
       }
 
-      if (reply.kind === ResponseKind.Summary) {
-        return parseSummaryLine(reply.fields);
+      const result = reply.kind === ResponseKind.Summary
+        ? parseSummaryLine(reply.fields)
+        : new BpPlusMeasurement(reply.xml, {
+            crcOk: reply.crcOk,
+            sizeBytes: reply.size,
+          });
+
+      // A device does not always announce a result it cannot stand behind, so
+      // the result is judged as well as the verdict on it. Off by
+      // `{ validate: false }` for a caller that wants whatever came back.
+      if (options.validate !== false) {
+        const unusable = unusableReason(
+          result,
+          this._features ? this._features.bpRange : null
+        );
+        if (unusable) {
+          throw new BpPlusError(unusable.code, {
+            message: unusable.message,
+            command: line,
+          });
+        }
       }
 
-      return new BpPlusMeasurement(reply.xml, {
-        crcOk: reply.crcOk,
-        sizeBytes: reply.size,
-      });
+      return result;
     } finally {
       outcome.cancel();
       this._setState(this.isConnected ? DeviceState.connected : DeviceState.disconnected);

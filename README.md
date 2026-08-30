@@ -309,6 +309,19 @@ drive a device. It shows:
 - the serial trace, every line in and out;
 - the SDK self-test, on a button.
 
+There is also a headless check that needs no browser and no device:
+
+```bash
+npm install --no-save jsdom
+node test/smoke.mjs
+```
+
+It loads `js/aobp.js` against a stand-in instrument and fails if the module does
+not start — `node --check` only parses, and a value read before it was assigned
+is exactly the fault that once shipped a build with the whole module dead on
+load. It also covers the SDK's judgement on whether a result is a reading at
+all. The jsdom half is skipped when jsdom is absent; the rest always runs.
+
 The module offers one hook for this and nothing else: if `window.AOBP_TRANSPORT`
 is a function it is asked for the transport, which is how the harness substitutes
 the simulator. REDCap never sets it.
@@ -339,6 +352,7 @@ sdk/                    the BP+ JavaScript SDK
 index.html              landing page, for serving the harness over HTTPS
 web.config              IIS rules for that
 test/harness.html       the test harness
+test/smoke.mjs          does the module still start, and is a result a reading
 test/chart.umd.min.js   Chart.js, used by the harness only
 ```
 
