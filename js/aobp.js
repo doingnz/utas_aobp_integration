@@ -52,7 +52,6 @@
       guid:      'seated_guid',
       device_id: 'seated_bpplus_device_id',
       snr:       'seated_snr',
-      alerts:    'seated_alerts',
       xml:       'seated_raw_xml_text',
     },
 
@@ -65,7 +64,6 @@
       guid:      'standing_guid',
       device_id: 'standing_bpplus_device_id',
       snr:       'standing_snr',
-      alerts:    'standing_alerts',
       xml:       'standing_raw_xml_text',
     },
   };
@@ -587,19 +585,14 @@
       // The raw dB rather than its band label: the label is an interpretation
       // of this number and can be recomputed, but a band that moved would leave
       // a stored label wrong with nothing to check it against.
+      //
+      // It is here and the alerts are not for the same reason. This is a
+      // measured value; an alert needs the determination it sits on to mean
+      // anything, and stripped of that it asks a researcher to invent rules for
+      // reading it. The raw XML is retained and holds both properly, so the
+      // record loses nothing by keeping only what stands on its own.
       setFieldValue(fields.snr, measurement.signalQuality.snr);
 
-      // Nobody is in the room while an AOBP measurement runs, so afterwards
-      // these are the only account of how the individual determinations went.
-      // Written only when the instrument has somewhere to put them.
-      var alerts = sdk.alertsOf(measurement);
-      if (alerts.length) {
-        setFieldValue(fields.alerts, alerts.map(function (alert) {
-          return alert.readings.length
-            ? 'BP' + alert.readings.join('/') + ': ' + alert.message
-            : alert.message;
-        }).join(' | '));
-      }
 
       // The raw XML carries the base64 pressure recordings and runs to well
       // over 100 kB on an AOBP measurement. A REDCap text field will not hold

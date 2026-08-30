@@ -150,7 +150,6 @@ and fills these fields:
 | Measurement GUID | `seated_guid` | `standing_guid` |
 | Device ID | `seated_bpplus_device_id` | `standing_bpplus_device_id` |
 | Signal-to-noise ratio | `seated_snr` | `standing_snr` |
-| Per-reading alerts | `seated_alerts` | `standing_alerts` |
 | Raw XML | `seated_raw_xml_text` | `standing_raw_xml_text` |
 
 Two control fields: `sys_standing_required` — set to `1` to ask for a standing
@@ -193,8 +192,11 @@ Severity is therefore contextual rather than lexical. The same alert text means:
 | produced values inside the device's `<bpRange>` | amber — recovered |
 | produced nothing usable | red — a real failure |
 
-`sys_alerts` records it either way. **Hide warnings on measurements that
-succeeded** only decides whether the operator sees the amber case: it is a real
+The alerts are shown, not stored. An alert needs the determination it sits on to
+mean anything, and a field holding one without that context asks a researcher to
+invent rules for reading it; the retained XML holds both properly. **Hide
+warnings on measurements that succeeded** decides whether the operator sees the
+amber case: it is a real
 signal — a participant needing two attempts every visit, a cuff failing
 intermittently — but it is also a warning over a good reading, which invites a
 repeat nobody needs. Off by default, so the warning is shown.
