@@ -136,7 +136,13 @@ const RESULT_CODE_TEXT = Object.freeze({
   8:  'The measurement did not finish.',
   9:  'No measurement found. A stored file may exist but hold no usable measurement — try recalling it without reprocessing.',
   10: 'The measurement did not complete within the permitted time.',
-  11: 'NIBP device error — the retry limit was reached.',
+  // F 11 is the blood-pressure module's general fault code, and the code alone
+  // does not say which fault. It was previously worded as "the retry limit was
+  // reached", which is one cause among several: a BP+ that aborted on the first
+  // attempt with over-pressure (C19 on its own screen) reports the same 11, and
+  // the wording sent the operator looking for retries that never happened. The
+  // device screen carries the specific cause; this text must not guess at it.
+  11: 'The blood-pressure module reported an error — the device screen shows the cause.',
   12: 'The measurement data is invalid.',
   13: 'Blood pressure was outside the measurable range.',
   14: 'Invalid command — the device is on a screen or in a mode that cannot carry it out.',

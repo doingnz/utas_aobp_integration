@@ -81,6 +81,7 @@ export class BpPlusDevice extends Emitter {
     this._detailLevel = options.detailLevel ?? DetailLevel.xml;
     this._lastMode    = null;
     this._features    = null;
+    this._awaitingVerdict = false;
 
     this._session.on('mode',     m => this._handleMode(m));
     this._session.on('pressure', p => this.emit('pressure', p));
@@ -98,11 +99,21 @@ export class BpPlusDevice extends Emitter {
       // the same F nn in the trace twice and read as two failures from the
       // device — which is the mistake session.js takes care to avoid for stray
       // failures, for the same reason.
+      //
+      // "Unsolicited" is the session's word: no *request* was waiting. Once a
+      // measurement's verdict is being watched for, that is no longer the whole
+      // truth — the F nn that ends a measurement answered nothing and is still
+      // the most important line in the trace.
+      const isVerdict = this._awaitingVerdict &&
+                        response.kind === ResponseKind.Failure;
+
       this.emit('log', {
         dir: 'rx',
-        text: '    ^ unsolicited — nothing was waiting for it',
+        text: isVerdict
+          ? '    ^ the measurement finished with this error'
+          : '    ^ unsolicited — nothing was waiting for it',
         at: Date.now(),
-        note: 'unsolicited',
+        note: isVerdict ? 'verdict' : 'unsolicited',
       });
     });
     this._session.on('close', () => this._setState(DeviceState.disconnected));
@@ -382,6 +393,10 @@ export class BpPlusDevice extends Emitter {
     let ready = false;
     let wake = null;
 
+    // Read by the unsolicited handler, so an F nn that ends a measurement is
+    // labelled as the verdict it is rather than as a stray.
+    this._awaitingVerdict = true;
+
     const offUnsolicited = this._session.on('unsolicited', response => {
       if (response.kind === ResponseKind.Failure && isFailureCode(response.code)) {
         if (!failure) failure = response;
@@ -397,7 +412,7 @@ export class BpPlusDevice extends Emitter {
     });
 
     return {
-      cancel() { offUnsolicited(); offMode(); },
+      cancel: () => { this._awaitingVerdict = false; offUnsolicited(); offMode(); },
 
       /**
        * The failure the device reported after the result, or null.
