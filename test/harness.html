@@ -157,8 +157,13 @@
           <button id="start-standing-btn" type="button">Start standing</button>
           <button id="cancel-bp-btn" type="button"
                   style="background:#b71c1c;border-color:#b71c1c">Cancel</button>
+          <button id="ping-bp-btn" type="button" class="secondary">Ping BP+</button>
           <button id="set-aobp-mode-btn" type="button" class="secondary">Set AOBP mode</button>
         </div>
+
+        <!-- What the record still needs. The status line says what just
+             happened; this says where the visit has got to. -->
+        <div id="visit-state" style="margin-bottom:14px"></div>
 
         <div id="seated-results-panel"></div>
         <div id="standing-results-panel"></div>
@@ -257,7 +262,7 @@ window.AOBP_CONFIG = {
   event_id: '1',
   repeat_instance: '1',
   pid: '0',
-  sdkUrl: new URL('../sdk/index.js?v=1.1.3', location.href).href,
+  sdkUrl: new URL('../sdk/index.js?v=1.2.0', location.href).href,
   saveXmlAsFile: false,          // no server here to receive it
   clockToleranceMinutes: 5,
   trace: true,
@@ -274,7 +279,7 @@ document.getElementById('record').addEventListener('input', function () {
 
 <!-- ?v= must match BUILD in the module script below. A query string is the only
      reliable way to force a tablet past a cached copy of the module. -->
-<script src="../js/aobp.js?v=1.1.3"></script>
+<script src="../js/aobp.js?v=1.2.0"></script>
 
 <script type="module">
 import * as sdk from '../sdk/index.js';
@@ -284,7 +289,7 @@ const $ = id => document.getElementById(id);
 // ── Build stamp ────────────────────────────────────────────────────────────
 // Bump this on every upload, and keep the ?v= on the aobp.js script tag and on
 // AOBP_CONFIG.sdkUrl in step with it.
-const BUILD = '1.1.3';
+const BUILD = '1.2.0';
 const BUILT = '2026-08-29';
 
 (function showBuild() {

@@ -14,6 +14,10 @@
  *   #cancel-bp-btn         optional; live only while a measurement is running
  *   #set-aobp-mode-btn     optional; live only when the device is not in AOBP
  *                          mode and can be told to be
+ *   #ping-bp-btn           optional; checks the link is live and the device is
+ *                          still the one we think it is
+ *   #visit-state           optional; what the record still needs, and whether
+ *                          it is ready to submit
  *   #status-display        the single large status line
  *   #seated-results-panel  filled after each measurement
  *   #standing-results-panel
@@ -99,6 +103,8 @@
       standing: document.getElementById('start-standing-btn'),
       cancel:   document.getElementById('cancel-bp-btn'),
       setAobp:  document.getElementById('set-aobp-mode-btn'),
+      ping:     document.getElementById('ping-bp-btn'),
+      visit:    document.getElementById('visit-state'),
       status:   document.getElementById('status-display'),
       panels: {
         seated:   document.getElementById('seated-results-panel'),
@@ -727,6 +733,58 @@
      * finished — so no path can leave a control stranded. Anything that changes
      * one of those facts calls this rather than reaching for a button itself.
      */
+    /**
+     * What the record still needs, in one line.
+     *
+     * The status line is about the last thing that happened; this is about
+     * where the visit has got to. They answer different questions, and an
+     * operator who has just seen "Standing done" still has to work out whether
+     * anything remains — which is exactly the moment a visit gets submitted
+     * half-finished.
+     */
+    var VISIT_STYLES = {
+      waiting:    { background: '#f8f9fa', border: '1px solid #dee2e6', color: '#5d6b7a' },
+      incomplete: { background: '#fff8e1', border: '1px solid #ffe082', color: '#8a6100' },
+      complete:   { background: '#d8f3dc', border: '1px solid #b7e4c7', color: '#2d6a4f' },
+    };
+
+    function renderVisitState() {
+      if (!ui.visit) return;
+
+      var state = visitStateText();
+      var style = VISIT_STYLES[state.kind];
+
+      ui.visit.style.background   = style.background;
+      ui.visit.style.border       = style.border;
+      ui.visit.style.color        = style.color;
+      ui.visit.style.borderRadius = '8px';
+      ui.visit.style.padding      = '10px 14px';
+      ui.visit.style.fontWeight   = '600';
+      ui.visit.style.textAlign    = 'center';
+      ui.visit.innerText = state.text;
+    }
+
+    function visitStateText() {
+      if (!device) return { kind: 'waiting', text: 'Not connected to a BP+' };
+
+      if (visitComplete()) {
+        return {
+          kind: 'complete',
+          text: standingDone
+            ? 'Complete — seated and standing recorded, ready to submit'
+            : 'Complete — seated recorded, ready to submit',
+        };
+      }
+
+      if (!seatedDone && !standingDone) {
+        return { kind: 'incomplete', text: 'No measurement recorded yet' };
+      }
+      if (seatedDone && !standingDone) {
+        return { kind: 'incomplete', text: 'Seated recorded — standing still needed' };
+      }
+      return { kind: 'incomplete', text: 'Standing recorded — seated still needed' };
+    }
+
     function updateButtons() {
       // Completion does not lock the buttons. The operator is in the room and
       // the module is not: a reading that succeeded but is unusable — the
@@ -739,6 +797,9 @@
       setEnabled(ui.standing, ready);
       setEnabled(ui.cancel,   !!device && busy);
       setEnabled(ui.setAobp,  ready && canSetAobpMode());
+      setEnabled(ui.ping,     ready);
+
+      renderVisitState();
     }
 
     /**
@@ -784,6 +845,52 @@
           }
         } catch (error) {
           setStatus('error', 'Could not set AOBP mode: ' + describe(error));
+          console.error('[AOBP]', error);
+        } finally {
+          busy = false;
+          updateButtons();
+        }
+      });
+    }
+
+    /**
+     * Confirm the link is live, and that the device on it is still usable.
+     *
+     * Nothing about a serial cable tells the page it has been unplugged: the
+     * port stays open and the next command simply times out, which the operator
+     * meets in the middle of a measurement. Two commands answer that cheaply —
+     * `?` for the Terminal API version and `f` for the feature list — and
+     * between them they re-check everything connect checked.
+     */
+    if (ui.ping) {
+      ui.ping.addEventListener('click', async function () {
+        if (!device) { setStatus('error', 'Please connect the BP+ first.'); return; }
+
+        busy = true;
+        updateButtons();
+        setStatus('normal', 'Checking the BP+…');
+
+        try {
+          apiVersion = await device.readApiVersion();
+          features   = await device.readFeatures();
+
+          var problems = [];
+          var shortfall = capabilityShortfall(features, apiVersion);
+          if (shortfall) problems.push(shortfall);
+          if (!deviceIsAobp()) {
+            problems.push('it is in ' + features.measureModeInfo.label +
+                          ', not BP+ AOBP');
+          }
+
+          if (problems.length) {
+            setStatus('error', 'BP+ answered, but ' + problems.join('; ') + '.');
+          } else {
+            setStatus('success',
+              'BP+ is live — Terminal API ' + apiVersion + ', feature list ' +
+              features.version + ', ' + features.measureModeInfo.label + '.');
+          }
+        } catch (error) {
+          setStatus('error', 'No answer from the BP+: ' + describe(error));
           console.error('[AOBP]', error);
         } finally {
           busy = false;
