@@ -93,9 +93,14 @@ export class BpPlusDevice extends Emitter {
       this.emit('log', { dir: 'rx', text: `E "${message}"`, at: Date.now(), note: 'diagnostic' });
     });
     this._session.on('unsolicited', response => {
+      // An annotation on the line above, never a repeat of it. The session has
+      // already logged every received line, so echoing the raw text here put
+      // the same F nn in the trace twice and read as two failures from the
+      // device — which is the mistake session.js takes care to avoid for stray
+      // failures, for the same reason.
       this.emit('log', {
         dir: 'rx',
-        text: `${response.raw}   (unsolicited)`,
+        text: '    ^ unsolicited — nothing was waiting for it',
         at: Date.now(),
         note: 'unsolicited',
       });
