@@ -361,12 +361,31 @@ one was lost.
 will not fit. A text field holds 65,535 bytes and an AOBP result is twice that,
 so the choice is not between whole and reduced but between reduced and
 truncated, and a document cut off mid-element is worth nothing.
-`sdk.minimalXml()` drops the derived `<Results>`, which recompute from
-`MeasDataLogger`, and each determination's `<RawPressureWave>` and
-`<NibpDetailedData>`. What stays is what nothing else can reconstruct: the
-suprasystolic and cuff recordings, and every determination's Sys/Dia/Map/Pr,
-timestamp, alert and motion flag. Measured on a real standing AOBP: **105 kB
-becomes 13 kB**, which fits with room to spare.
+`sdk.minimalXml()` drops the waveform arrays and keeps everything else. It works
+from a **drop list**, not a keep list, so anything a later firmware adds survives
+by default — which is what a compact archive of a format still in development
+needs.
+
+Gone: `<RawPressureWave>` and `<NibpDetailedData>` from each determination, and
+inside `<Result>` the seven bulk arrays (`sBaseLined`, `sAveragePulse`,
+`cAveragePulse`, `cEstimate`, `baEstimate` and the two `*PulsePointsIndexes`
+that index into them).
+
+Kept: `MeasDataLogger` entire, including the suprasystolic and cuff recordings;
+every determination's Sys/Dia/Map/Pr with its timestamp, alert and motion flag;
+and all 37 derived values in `<Result>` — SNR, sPRV, cSys, cDia, cAIx, cSEVR and
+the rest — with `version` and `algorithm_revision` on the element. That last pair
+matters: they record *which* algorithm produced the values, and a later
+recomputation would use a later revision with nothing to say the two differ.
+
+Also kept, deliberately, though both are arrays: `infraDiastolicFiltered` and
+`infraDiastolicBeatStartIdxs`, the pulse pressure wave recorded below diastolic
+and its pulse starts. Firmware does not record them while AOBP is enabled, so no
+file has them yet; when they appear they must survive, and the SDK has a test
+that says so.
+
+Measured on a real standing AOBP: **105,388 bytes becomes 14,432**, comfortably
+inside a text field.
 
 **When it fails.** The measurement itself is safe: the numbers are in their
 fields before the upload is attempted. The recording is not — it exists nowhere

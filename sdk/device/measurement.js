@@ -686,26 +686,60 @@ export function alertsOf(result, bpRange = null) {
 /**
  * Elements the minimal XML drops, and why each is safe to lose.
  *
- * `RawPressureWave`   the cuff waveform for one determination, ~26 kB of it.
- * `NibpDetailedData`  the module's own working, for support rather than research.
- * `Results`           every derived central value, ~47 kB. Recomputable from
- *                     MeasDataLogger, which is what produced them.
+ * Dropped wherever they appear:
  *
- * What stays is the part nothing else can reconstruct: MeasDataLogger with its
- * suprasystolic and cuff pressure recordings, and each NibpBloodPressure with
- * the Sys/Dia/Map/Pr that went into the average, its timestamp, its alert and
- * its motion flag. On a real standing AOBP that is 13 kB where the whole file
- * is 105 kB.
+ *   `RawPressureWave`   the cuff waveform for one determination, ~26 kB of it
+ *   `NibpDetailedData`  the module's own working, for support not research
+ *
+ * A drop list, not a keep list, and that is the whole design. Anything a later
+ * firmware adds survives by default — which is what a compact archive of a
+ * format still under development needs. A keep list would silently discard every
+ * element nobody had thought of yet.
  */
-const BULK_ELEMENTS = ['Results', 'RawPressureWave', 'NibpDetailedData'];
+const DROPPED_ANYWHERE = ['RawPressureWave', 'NibpDetailedData'];
+
+/**
+ * The bulk arrays inside `Result`, and the index arrays that point into them.
+ *
+ * `Result` is 47 kB, of which 45.6 kB is these seven and 1.2 kB is the 37 values
+ * that matter: SNR, sPR, sPRV, sAI, cSys, cDia, cAIx, cSEVR and the rest of the
+ * derived central result. Keeping all 37 costs 1,180 bytes more than keeping SNR
+ * alone, so they all stay — along with `version` and `algorithm_revision` on the
+ * element itself, which record WHICH algorithm produced them. That is not
+ * recomputable: a later recomputation uses a later revision, and without the
+ * attribute there is nothing to say the two differ.
+ *
+ * The two `*PulsePointsIndexes` go with the waveforms they index into. An index
+ * without its array is a set of offsets into nothing.
+ *
+ * NOT on this list, deliberately, though both are arrays:
+ * `infraDiastolicFiltered` and `infraDiastolicBeatStartIdxs` — the pulse
+ * pressure wave recorded below diastolic, and its pulse starts. Firmware does
+ * not record them while AOBP is enabled, so no file has them yet. They are the
+ * calculated result of a recording that has no substitute, and when they do
+ * appear they must survive. Do not add them here.
+ */
+const DROPPED_FROM_RESULT = [
+  'sBaseLined',
+  'sAveragePulse',
+  'cAveragePulse',
+  'cEstimate',
+  'baEstimate',
+  'sBaseLinedPulsePointsIndexes',
+  'cEstimatePulsePointsIndexes',
+];
 
 /**
  * The measurement XML with the bulk recordings removed.
  *
  * For somewhere that cannot hold the whole thing — a REDCap text field is
- * 65,535 bytes and an AOBP result is twice that — and where a truncated
- * document would be worse than a smaller complete one. Prefer storing the file
- * whole wherever that is possible; this is the fallback, not the default.
+ * 65,535 bytes and an AOBP result is twice that — and where a truncated document
+ * would be worse than a smaller complete one. Prefer storing the file whole
+ * wherever that is possible; this is the fallback, not the default.
+ *
+ * Measured on a real standing AOBP: 105,247 bytes to 14,353. What survives is
+ * MeasDataLogger entire, every determination's Sys/Dia/Map/Pr with its timestamp
+ * and alert, and the whole derived result bar the waveforms.
  *
  * Returns the input unchanged if it cannot be parsed, on the grounds that
  * handing back something smaller and wrong is the one outcome worth avoiding.
@@ -719,12 +753,27 @@ export function minimalXml(xml) {
   const doc = new DOMParser().parseFromString(xml, 'text/xml');
   if (doc.getElementsByTagName('parsererror').length) return xml;
 
-  for (const tag of BULK_ELEMENTS) {
+  const remove = element => {
+    if (element && element.parentNode) element.parentNode.removeChild(element);
+  };
+
+  for (const tag of DROPPED_ANYWHERE) {
     const found = doc.getElementsByTagName(tag);
     // Backwards: getElementsByTagName is live, and removing from the front
     // reindexes everything still to be removed.
-    for (let i = found.length - 1; i >= 0; i--) {
-      if (found[i].parentNode) found[i].parentNode.removeChild(found[i]);
+    for (let i = found.length - 1; i >= 0; i--) remove(found[i]);
+  }
+
+  // Scoped to Result, so a same-named element elsewhere in the document is left
+  // alone. There is one Result per measurement today; the loop does not assume it.
+  const results = doc.getElementsByTagName('Result');
+  for (let r = 0; r < results.length; r++) {
+    const children = results[r].childNodes;
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      if (child.nodeType === 1 && DROPPED_FROM_RESULT.indexOf(child.nodeName) !== -1) {
+        remove(child);
+      }
     }
   }
 

@@ -570,22 +570,46 @@ console.log('\nthe XML reduces to what cannot be recomputed');
     '<NibpBloodPressure><Sys>130</Sys><Dia>80</Dia>' +
     '<RawPressureWave>' + 'Y'.repeat(4000) + '</RawPressureWave>' +
     '</NibpBloodPressure></NibpBloodPressures></MeasDataLogger>' +
-    '<Results><Result><SNR>23</SNR></Result></Results></BPplus>';
+    '<Results><Result version="5.0" algorithm_revision="1.0.1.0">' +
+    '<SNR>28</SNR><sPRV>6</sPRV><cSys>116</cSys><cAIx>24</cAIx>' +
+    '<infraDiastolicFiltered>0.1,0.2,0.3</infraDiastolicFiltered>' +
+    '<infraDiastolicBeatStartIdxs>0,150,300</infraDiastolicBeatStartIdxs>' +
+    '<sBaseLined>' + '1.0,'.repeat(1000) + '</sBaseLined>' +
+    '<cEstimate>' + '2.0,'.repeat(1000) + '</cEstimate>' +
+    '<baEstimate>' + '3.0,'.repeat(1000) + '</baEstimate>' +
+    '</Result></Results></BPplus>';
 
   const small = minimalXml(xml);
 
   check('the bulk is gone',
-    !/RawPressureWave|NibpDetailedData|<Results>/.test(small), small.slice(0, 120));
+    !/RawPressureWave|NibpDetailedData|<sBaseLined>|<cEstimate>|<baEstimate>/.test(small),
+    small.slice(0, 120));
   check('every determination is still there',
     (small.match(/<NibpBloodPressure>/g) || []).length === 2);
   check('and keeps the readings that made the average',
     small.includes('<Sys>126</Sys>') && small.includes('<Sys>130</Sys>'));
   check('the suprasystolic recording survives, since nothing else rebuilds it',
     small.includes('RawSuprasystolicPressure') && small.includes('RawCuffPPressure'));
+
+  // 47 kB of Result is seven arrays; 1.2 kB is the 37 values worth having.
+  check('every derived value survives, not only SNR',
+    ['<SNR>28<', '<sPRV>6<', '<cSys>116<', '<cAIx>24<'].every(v => small.includes(v)));
+
+  // Which algorithm produced them. A later recomputation uses a later revision,
+  // and without this there is nothing to say the two differ.
+  check('and the algorithm that produced them is named',
+    small.includes('algorithm_revision="1.0.1.0"') && small.includes('version="5.0"'));
+
+  // Arrays, and kept anyway: the pulse pressure wave recorded below diastolic
+  // has no substitute in the file. Firmware does not record it while AOBP is on,
+  // so nothing in hand contains it — which is exactly why it needs a test.
+  check('the infradiastolic result survives, though it is an array',
+    small.includes('<infraDiastolicFiltered>') &&
+    small.includes('<infraDiastolicBeatStartIdxs>'));
+
   check('it is a fraction of the size', small.length < xml.length / 4,
     small.length + ' of ' + xml.length);
 
-  // Smaller and wrong is the one outcome worth avoiding.
   check('something unparseable comes back untouched',
     minimalXml('<BPplus>truncated') === '<BPplus>truncated');
   check('and so does nothing at all', minimalXml('') === '');
