@@ -334,6 +334,23 @@
           : 'Please start the measurement from this page rather than from the ' +
             'BP+, so the reading is saved against the right participant.');
       });
+      // The link can go while nobody is asking it anything: the cable leaves
+      // the computer, Chrome tells us the device is gone, and until now the
+      // page carried on showing a connected BP+ and two live Start buttons.
+      // Nothing said otherwise until the next command failed.
+      device.on('state', function (state) {
+        if (device && device.isConnected) return;
+
+        features = null;
+        device = null;
+        showConnectButtons();
+        updateButtons();
+        setStatus('error', 'The BP+ has been disconnected. Check the cable is ' +
+          'plugged into the computer and into the BP+, then press Connect BP+.',
+          'all');
+        console.warn('[AOBP] the device went away (' + state + ')');
+      });
+
       device.on('log', function (entry) {
         if (window.AOBP_CONFIG && window.AOBP_CONFIG.trace) {
           console.log('[AOBP] ' + (entry.dir === 'tx' ? '>' : '<'), entry.text);
@@ -854,24 +871,6 @@
                  ' Check the cuff and the hose for a kink, then repeat the measurement.';
         }
 
-        // A port that opened but never answered. The SDK says which command
-        // timed out, which is right for a log and useless to a nurse: the only
-        // thing she can act on is the cable. Most often it is not plugged into
-        // the BP+ at all, or the BP+ is off.
-        //
-        // Only a timeout, though. timeoutError() and connectionError() share
-        // one Table 5 code — 18 covers both "we could not ask" and "it did not
-        // answer" — so matching on the code alone replaced every connection
-        // failure with cable advice, including "the port is already open",
-        // which is not about the cable and needs its own answer. `command` is
-        // what separates them: a timeout knows what it was waiting for.
-        if (sdk && error.code === sdk.ResultCode.timeoutOrConnectionError &&
-            error.command) {
-          return 'Could not connect to the BP+. Check the cable is pushed all ' +
-                 'the way into the BP+ and that the device is switched on, ' +
-                 'then press Connect BP+ again.';
-        }
-
         // Chrome's own words for a port the operating system would not hand
         // over: "Failed to open serial port." It names no cause, and the two
         // that matter are both fixable at the desk — another tab or program
@@ -881,6 +880,23 @@
           return 'The USB cable is in use by something else. Close any other ' +
                  'tab or program using the BP+, then unplug the cable, plug it ' +
                  'back in, and press Connect BP+ again.';
+        }
+
+        // Everything else that code 18 covers: we could not ask, or we asked
+        // and nothing came back. The SDK names the command it was waiting for,
+        // or says it could not write — right for a log, and no use to a nurse,
+        // who can act on one thing only. Both ends of the cable are named,
+        // because either being loose produces this and the operator cannot be
+        // expected to know which end the message meant. "Not answering" rather
+        // than "could not connect": this also reaches a measurement that
+        // stopped mid-way, where nothing about connecting is what went wrong.
+        //
+        // The port-open failures above share this code and are checked first;
+        // they are the one branch of 18 that is not about the cable.
+        if (sdk && error.code === sdk.ResultCode.timeoutOrConnectionError) {
+          return 'The BP+ is not answering. Check the cable is pushed all the ' +
+                 'way into the BP+ and into the computer, and that the BP+ is ' +
+                 'switched on, then try again.';
         }
 
         return error.message;
@@ -953,6 +969,16 @@
     function hideConnectButtons() {
       for (var mode in blocks) {
         if (blocks[mode].connect) blocks[mode].connect.style.display = 'none';
+      }
+    }
+
+    /** And back again when the device goes away mid-visit. */
+    function showConnectButtons() {
+      for (var mode in blocks) {
+        if (blocks[mode].connect) {
+          blocks[mode].connect.style.display = '';
+          setEnabled(blocks[mode].connect, true);
+        }
       }
     }
 

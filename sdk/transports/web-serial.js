@@ -10,7 +10,7 @@
  * devices come up at 9600 and need `b 115200` sent at 9600 first).
  */
 
-import { Transport, TransportState } from './transport.js';
+import { Transport } from './transport.js';
 
 export class WebSerialTransport extends Transport {
 
@@ -104,11 +104,19 @@ export class WebSerialTransport extends Transport {
     // port across a failure — to retry on it rather than reopen it — would
     // otherwise retry for ever against a device that is no longer there.
     this._onUnplug = (event) => {
-      if (event.target !== this._port) return;
-      this.emit('warning', { message: 'The USB cable was unplugged from the computer.' });
-      this._setState(TransportState.disconnected);
+      // navigator.serial dispatches SerialConnectionEvent, so `target` is
+      // navigator.serial and `port` is the port that went away. Matching on
+      // target meant the guard never passed and the handler never ran — the
+      // cable could be pulled out and nothing said so. The port fires the same
+      // event at itself, where there is nothing to match; both are wired, and
+      // whichever arrives first wins, because _dropped() only fires once.
+      if (event.port && event.port !== this._port) return;
+      this._dropped('The USB cable was unplugged from the computer.');
     };
     navigator.serial.addEventListener('disconnect', this._onUnplug);
+    if (this._port.addEventListener) {
+      this._port.addEventListener('disconnect', this._onUnplug);
+    }
 
     this._reader = this._port.readable.getReader();
     this._writer = this._port.writable.getWriter();
@@ -152,6 +160,9 @@ export class WebSerialTransport extends Transport {
   async _close() {
     if (this._onUnplug) {
       navigator.serial.removeEventListener('disconnect', this._onUnplug);
+      if (this._port && this._port.removeEventListener) {
+        this._port.removeEventListener('disconnect', this._onUnplug);
+      }
       this._onUnplug = null;
     }
 

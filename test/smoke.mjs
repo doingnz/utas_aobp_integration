@@ -433,6 +433,36 @@ console.log('\nan unanswered port is retried, not reopened');
     /if \(device && !device\.transport\.isConnected\) device = null;/.test(app));
 }
 
+// -- What the operator is told --------------------------------------------
+// The SDK's wording is for a log. "Could not write to the device." is accurate
+// and leaves a nurse with nothing to do; both ends of the cable are named,
+// because either being loose produces it and the message cannot assume which.
+
+console.log('\nerrors read as something to do');
+
+{
+  const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+
+  check('every connection failure gets cable advice, not just timeouts',
+    /error\.code === sdk\.ResultCode\.timeoutOrConnectionError\) \{/.test(app) &&
+    !app.includes('timeoutOrConnectionError &&'));
+  check('the advice names both ends of the cable',
+    /into the BP\+ and into the computer/.test(app));
+  check('and does not name a button, since it reaches Connect and Start alike',
+    /switched on, then try again\./.test(app));
+
+  // Both are code 18, and a port the OS would not hand over is not a cable
+  // problem, so it has to be recognised before the cable branch runs.
+  const openAt  = app.indexOf('failed to open serial port|port is already open');
+  const cableAt = app.indexOf('error.code === sdk.ResultCode.timeoutOrConnectionError)');
+  check('a port held by another program is told apart from a loose cable',
+    openAt > 0 && openAt < cableAt);
+
+  // Losing the device mid-visit has to reach the screen on its own.
+  check('a device that goes away puts Connect back',
+    /device\.on\('state'/.test(app) && /function showConnectButtons/.test(app));
+}
+
 // ── settle() can rethrow when the caller needs to know ──────────────────────
 // Teardown steps are best-effort, but the port close is not: a port left open
 // makes the next connect impossible, so that one failure has to surface.
