@@ -217,6 +217,10 @@
     var features = null;     // the reply to `f`, read once at connect
     var apiVersion = null;   // the reply to `ver`, or null if it could not be read
     var lastMeasurement = null;
+
+    // Kept so a failed upload can be tried again without repeating the
+    // measurement on the participant. Cleared once the file is stored.
+    var pendingXml = { seated: null, standing: null };
     var lastClockSync = null;
     var busy = false;                 // a measurement is on the arm right now
     var seatedDone = false;
@@ -766,6 +770,12 @@
                        ' characters; a REDCap text field will not hold it. ' +
                        'Store it as a file instead (see README).');
         }
+
+        // Written whole, and replaced by a marker once the file is safely
+        // stored. This order is deliberate: if the upload fails, or files are
+        // not configured for this project, the field still holds whatever
+        // REDCap will keep of the XML. That is truncated and imperfect, and it
+        // is better than a record that mentions a file nobody saved.
         setFieldValue(fields.xml, xml);
       }
 
@@ -860,20 +870,149 @@
       if (!cfg.saveXmlAsFile || !xml) return;
 
       if (typeof ExternalModules === 'undefined' || !ExternalModules.ajax) {
-        console.warn('[AOBP] the External Modules AJAX helper is not on this page.');
+        uploadFailed(mode, 'The External Modules helper is not on this page.');
         return;
       }
 
+      pendingXml[mode] = xml;
+
       try {
         var reply = await ExternalModules.ajax('save-xml', { mode: mode, xml: xml });
-        if (reply && reply.status === 'success') {
-          console.log('[AOBP] stored ' + reply.filename + ' in ' + reply.field);
-        } else {
-          console.warn('[AOBP] the XML was not stored:', reply && reply.message);
+
+        if (!reply || reply.status !== 'success') {
+          uploadFailed(mode, (reply && reply.message) || 'The server did not say why.');
+          return;
         }
+
+        console.log('[AOBP] stored ' + reply.filename + ' in ' + reply.field);
+        pendingXml[mode] = null;
+        hideResend(mode);
+        await markStored(mode, xml, reply);
       } catch (error) {
-        console.warn('[AOBP] the XML was not stored:', error);
+        uploadFailed(mode, error && error.message ? error.message : String(error));
       }
+    }
+
+    /**
+     * Replace the XML in the text field with a note saying where it went.
+     *
+     * REDCap keeps only the first part of a value that long, so what sat in the
+     * text field was a piece of an XML document formatted to look like a whole
+     * one — the worst of both, since it reads as data. A marker says plainly
+     * that the measurement is in the file field, and carries the length and
+     * digest of what was sent, so the file on the record can be checked against
+     * what the device produced rather than taken on trust.
+     */
+    async function markStored(mode, xml, reply) {
+      var fields = FIELD_NAMES[mode];
+      if (!fields.xml) return;
+
+      var digest = await sha256Hex(xml);
+
+      setFieldValue(fields.xml,
+        'stored-as-file' +
+        ' field=' + (reply.field || '?') +
+        ' filename=' + (reply.filename || '?') +
+        ' bytes=' + byteLength(xml) +
+        ' sha256=' + (digest || 'unavailable') +
+        ' at=' + new Date().toISOString());
+    }
+
+    /** Bytes, not characters: the XML is UTF-8 by the time it is a file. */
+    function byteLength(text) {
+      return typeof TextEncoder === 'undefined'
+        ? text.length
+        : new TextEncoder().encode(text).length;
+    }
+
+    /**
+     * SHA-256, or null where the page is not allowed one.
+     *
+     * crypto.subtle exists only in a secure context. A survey is served over
+     * HTTPS, so this is available in the field; a file:// harness is not, and
+     * the marker says so rather than carrying a wrong digest.
+     */
+    async function sha256Hex(text) {
+      if (typeof crypto === 'undefined' || !crypto.subtle) return null;
+      try {
+        var digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+        var out = [];
+        new Uint8Array(digest).forEach(function (b) {
+          out.push(b < 16 ? '0' + b.toString(16) : b.toString(16));
+        });
+        return out.join('');
+      } catch (error) {
+        console.warn('[AOBP] could not hash the XML:', error.message);
+        return null;
+      }
+    }
+
+    /**
+     * Say that the recording did not reach the server, and offer another go.
+     *
+     * The measurement itself is safe — the numbers are in their fields and the
+     * text field still holds what REDCap will keep of the XML. What is at risk
+     * is the full recording, which exists nowhere but this browser tab until it
+     * is uploaded, and is gone when the page closes. That is worth interrupting
+     * for, and worth a button: repeating the measurement on the participant to
+     * recover a file is not a reasonable thing to ask.
+     */
+    function uploadFailed(mode, why) {
+      console.warn('[AOBP] the ' + mode + ' recording was not stored: ' + why);
+      setStatus('error',
+        'The ' + mode + ' measurement is saved, but its full recording did ' +
+        'not reach the server. Press Resend recording. Do not close this page ' +
+        'until it succeeds.', mode);
+      showResend(mode);
+    }
+
+    /**
+     * The Resend button, made here because no instrument declares one.
+     *
+     * It appears only when there is something to resend, next to the status
+     * line for that position.
+     */
+    function showResend(mode) {
+      var id = 'aobp-resend-' + mode;
+      var button = document.getElementById(id);
+
+      if (!button) {
+        var host = blocks[mode].alerts || blocks[mode].status;
+        if (!host || !host.parentNode) return;
+
+        button = document.createElement('button');
+        button.id = id;
+        button.type = 'button';
+        button.textContent = 'Resend recording';
+        button.style.marginTop = '10px';
+        button.style.padding = '10px 18px';
+        button.style.fontWeight = '600';
+        button.style.cursor = 'pointer';
+
+        button.addEventListener('click', async function () {
+          var xml = pendingXml[mode];
+          if (!xml) return;
+
+          setEnabled(button, false);
+          setStatus('normal', 'Sending the ' + mode + ' recording…', mode);
+          await saveXmlAsFile(mode, xml);
+          setEnabled(button, true);
+
+          if (!pendingXml[mode]) {
+            setStatus('success', 'The ' + mode + ' recording is stored.', mode);
+          }
+        });
+
+        host.parentNode.insertBefore(button, host.nextSibling);
+      }
+
+      button.style.display = '';
+      setEnabled(button, true);
+    }
+
+    function hideResend(mode) {
+      var button = document.getElementById('aobp-resend-' + mode);
+      if (button) button.style.display = 'none';
     }
 
     /** Turn an SDK error into something an operator can act on. */

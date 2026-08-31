@@ -540,6 +540,44 @@ console.log('\na cancel says who asked for it');
     JSON.stringify({ code: deviceCancel?.code, reason: deviceCancel?.reason }));
 }
 
+// -- The recording goes to a file, and says so if it did not ---------------
+// REDCap keeps only the first part of a value the size of an AOBP XML, so what
+// sat in the notes field was a fragment formatted to look like a whole
+// document. The file field is where the recording belongs; the notes field now
+// says where it went, and what to check it against.
+
+console.log('\nthe recording is filed, not truncated');
+
+{
+  const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+  const visit = fs.readFileSync(new URL('harness-visit.html', import.meta.url), 'utf8');
+
+  check('the XML is written whole before any upload is attempted',
+    app.indexOf('setFieldValue(fields.xml, xml)') <
+    app.indexOf('async function saveXmlAsFile'));
+  check('a stored recording leaves a marker with its length and digest',
+    /stored-as-file/.test(app) && /sha256=/.test(app) && /bytes=/.test(app));
+  check('and the digest is over bytes, not characters',
+    /function byteLength/.test(app) && /TextEncoder\(\)\.encode/.test(app));
+
+  // The measurement is safe either way; the recording is not, and it exists
+  // nowhere but the page until it is uploaded.
+  check('a failed upload interrupts rather than logging quietly',
+    /function uploadFailed/.test(app) && /Do not close this page/.test(app));
+  check('and offers another go without repeating the measurement',
+    /function showResend/.test(app) && /pendingXml\[mode\]/.test(app));
+  check('the marker is only written once the file is actually stored',
+    app.indexOf('await markStored') > app.indexOf("reply.status !== 'success'"));
+
+  // No server on the demo host, so the harness answers the call itself.
+  check('the harness stands in for the module endpoint',
+    /window\.ExternalModules/.test(visit) && /save-xml/.test(visit));
+  check('and can be made to fail, so Resend has something to recover from',
+    /em-fail/.test(visit));
+  check('the harness posts for real, so the path is exercised',
+    /saveXmlAsFile: true/.test(visit));
+}
+
 // -- The SDK classifies, and says what to do -------------------------------
 // Table 5 gives every connection failure code 18, and 18 has to cover "another
 // program owns the port" and "the cuff end is out" — which want opposite

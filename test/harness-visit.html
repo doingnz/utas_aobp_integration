@@ -232,8 +232,8 @@ document.body.appendChild(hidden);
 window.AOBP_CONFIG = {
   record: document.getElementById('record').value,
   event_id: '1', repeat_instance: '1', pid: '0',
-  sdkUrl: new URL('../sdk/index.js?v=1.7.19', location.href).href,
-  saveXmlAsFile: false,
+  sdkUrl: new URL('../sdk/index.js?v=1.7.20', location.href).href,
+  saveXmlAsFile: true,    // posts to the EM stand-in at the foot of this page
   clockToleranceMinutes: 5,
   trace: true,
   autoAdvanceStanding: false,
@@ -244,12 +244,12 @@ document.getElementById('record').addEventListener('input', function () {
 });
 </script>
 
-<script src="../js/aobp.js?v=1.7.19"></script>
+<script src="../js/aobp.js?v=1.7.20"></script>
 
 <script type="module">
-import * as sdk from '../sdk/index.js?v=1.7.19';
+import * as sdk from '../sdk/index.js?v=1.7.20';
 
-const BUILD = '1.7.19';
+const BUILD = '1.7.20';
 const BUILT = '2026-08-31';
 const $ = id => document.getElementById(id);
 
@@ -315,7 +315,11 @@ function renderFields() {
   for (const name of TEXT_FIELDS) {
     const el = document.querySelector(`[name="${name}"]`);
     let v = el ? el.value : '';
-    if (name.endsWith('_raw_xml_text') && v) v = `(${v.length} characters of XML)`;
+    // Once the recording is filed, this field holds the marker rather than the
+    // XML — short, and the whole point, so it is shown in full.
+    if (name.endsWith('_raw_xml_text') && v && !v.startsWith('stored-as-file')) {
+      v = `(${v.length} characters of XML — REDCap would truncate this)`;
+    }
     rows.push([name, v]);
   }
   for (const name of ['seated_af', 'standing_af']) {
@@ -333,5 +337,143 @@ document.addEventListener('aobp:measurement', renderFields);
 setInterval(renderFields, 1000);
 renderFields();
 </script>
+
+<!-- ── Stand-in for the REDCap External Module ──────────────────────────────
+     No server here: this page is static hosting. The module calls
+     ExternalModules.ajax('save-xml', …) exactly as it does inside REDCap, and
+     this catches the call, shows what would have been posted, and keeps the
+     bytes in the browser so they can be opened, saved and checked.
+
+     What it proves: that the module sends the whole recording, with the record,
+     event and instance REDCap would file it under. What it cannot prove is that
+     REDCap::saveFile() accepts it — that needs a real project.            -->
+<div class="card" id="em-card">
+  <h2>REDCap EM stand-in — save-xml</h2>
+  <p class="note">
+    The module posts each recording here after the measurement. Nothing leaves
+    the browser: files are held in IndexedDB and served from memory.
+  </p>
+
+  <div class="row" style="margin:12px 0">
+    <label><input type="checkbox" id="em-enabled" checked> Storing XML as a file is enabled</label>
+    <label><input type="checkbox" id="em-fail"> Make the next save fail</label>
+    <button type="button" id="em-clear" class="secondary">Forget stored files</button>
+  </div>
+
+  <table id="em-files"><thead>
+    <tr><th>filed under</th><th>field</th><th>bytes</th><th>sha-256</th><th></th></tr>
+  </thead><tbody></tbody></table>
+
+  <p class="note" id="em-empty">Nothing posted yet.</p>
+</div>
+
+<script>
+// ── The endpoint the module thinks it is talking to ────────────────────────
+const EM_DB = 'aobp-harness-files';
+let emDb = null;
+
+function emOpen() {
+  if (emDb) return Promise.resolve(emDb);
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(EM_DB, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('files', { keyPath: 'id' });
+    request.onsuccess = () => { emDb = request.result; resolve(emDb); };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function emPut(row) {
+  const db = await emOpen();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('files', 'readwrite');
+    tx.objectStore('files').put(row);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function emAll() {
+  const db = await emOpen();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction('files', 'readonly').objectStore('files').getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function emClear() {
+  const db = await emOpen();
+  await new Promise(resolve => {
+    const tx = db.transaction('files', 'readwrite');
+    tx.objectStore('files').clear();
+    tx.oncomplete = resolve;
+  });
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// The same shape the External Modules helper gives a module in REDCap: one
+// call, a promise, and a plain object back.
+window.ExternalModules = {
+  async ajax(action, payload) {
+    const cfg = window.AOBP_CONFIG || {};
+    console.log('[EM stand-in] ' + action, { mode: payload.mode, bytes: payload.xml.length });
+
+    if (action !== 'save-xml') return { status: 'error', message: 'Unknown action.' };
+    if (!$('em-enabled').checked) {
+      return { status: 'error', message: 'Storing the XML as a file is not enabled for this project.' };
+    }
+    if ($('em-fail').checked) {
+      $('em-fail').checked = false;      // one failure, so Resend can succeed
+      return { status: 'error', message: 'REDCap::saveFile did not store the file.' };
+    }
+    if (!payload.xml || !payload.xml.includes('<BPplus')) {
+      return { status: 'error', message: 'That does not look like a BP+ measurement.' };
+    }
+
+    const field    = payload.mode === 'standing' ? 'standing_raw_xml' : 'seated_raw_xml';
+    const filename = cfg.record + '_inst' + cfg.repeat_instance + '_' + payload.mode + '_aobp.xml';
+
+    await emPut({
+      id: filename,
+      record: cfg.record, event_id: cfg.event_id, instance: cfg.repeat_instance,
+      field, filename,
+      bytes: new TextEncoder().encode(payload.xml).length,
+      sha256: await sha256Hex(payload.xml),
+      xml: payload.xml,
+      at: new Date().toISOString(),
+    });
+
+    renderEmFiles();
+    return { status: 'success', field, filename };
+  },
+};
+
+async function renderEmFiles() {
+  const rows = await emAll();
+  $('em-empty').style.display = rows.length ? 'none' : '';
+
+  $('em-files').querySelector('tbody').innerHTML = rows.map(row => {
+    const url = URL.createObjectURL(new Blob([row.xml], { type: 'application/xml' }));
+    return `<tr>
+      <td>${row.record} · event ${row.event_id} · instance ${row.instance}</td>
+      <td>${row.field}</td>
+      <td style="text-align:right">${row.bytes.toLocaleString()}</td>
+      <td><code title="${row.sha256}">${row.sha256.slice(0, 12)}…</code></td>
+      <td>
+        <a href="${url}" download="${row.filename}">save</a> ·
+        <a href="${url}" target="_blank" rel="noopener">open</a>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+$('em-clear').addEventListener('click', async () => { await emClear(); renderEmFiles(); });
+renderEmFiles();
+</script>
+
 </body>
 </html>
