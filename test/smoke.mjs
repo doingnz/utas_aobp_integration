@@ -122,6 +122,17 @@ if (!JSDOM) {
     ['start-seated-btn', 'start-standing-btn', 'cancel-bp-btn', 'ping-bp-btn',
      'set-aobp-mode-btn'].every(id => el(id).disabled === true));
 
+  // One block means both positions resolve to the same Connect button. Wiring
+  // per position put two listeners on it, so one press opened the port picker
+  // and then immediately failed the second attempt with "No port selected by
+  // the user" — over the top of the picker the operator was still looking at.
+  errors.length = 0;
+  el('connect-bp-btn').dispatchEvent(new w.Event('click'));
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  check('a shared Connect button runs its handler once, not once per position',
+    errors.length <= 1, errors.length + ' attempts: ' + errors.join(' | '));
+
   // ── Two blocks on one page ────────────────────────────────────────────────
   // The visit instrument puts seated and standing in separate blocks with
   // per-position ids. The module must bind each block's own controls; binding

@@ -120,7 +120,17 @@
   var MIN_FEATURE_VERSION = '3.0';   // the feature schema carrying measureMode
   var MIN_API_VERSION     = '2.4';   // the command set accepting body position
 
+  // Set up once per page, however many times we are asked to.
+  //
+  // A second start() would wire a second click handler onto every button, and
+  // one press of Connect would then call requestPort() twice — the second call
+  // rejecting as "No port selected by the user" the moment it was made, on top
+  // of the picker the first one had just opened.
+  var started = false;
+
   document.addEventListener('DOMContentLoaded', function () {
+    if (started) return;
+    started = true;
     start().catch(function (error) {
       console.error('[AOBP] failed to start', error);
     });
@@ -159,6 +169,25 @@
     }
 
     var blocks = { seated: blockFor('seated'), standing: blockFor('standing') };
+
+    /**
+     * Bind a handler to a control once, however many positions share it.
+     *
+     * An instrument with one block has no per-position ids, so both positions
+     * resolve to the same button — and wiring per position then put two
+     * listeners on it. One press ran connect() twice: two requestPort() calls,
+     * the second rejected as "No port selected by the user" the instant it was
+     * made, and that rejection overwrote the status line while the operator was
+     * still looking at the picker the first one opened.
+     */
+    var wired = [];
+
+    function once(element, handler) {
+      if (!element || wired.indexOf(element) !== -1) return false;
+      wired.push(element);
+      element.addEventListener('click', handler);
+      return true;
+    }
 
     // Which block the operator is working in, and therefore where messages go.
     var currentMode = 'seated';
@@ -867,9 +896,8 @@
      */
     function wireConnect(mode) {
       var button = blocks[mode].connect;
-      if (!button) return;
 
-      button.addEventListener('click', async function () {
+      once(button, async function () {
         currentMode = mode;
 
         if (device) {
@@ -1217,9 +1245,8 @@
 
     function wireCancel(mode) {
       var button = blocks[mode].cancel;
-      if (!button) return;
 
-      button.addEventListener('click', async function () {
+      once(button, async function () {
         if (!device) return;
 
         // Disabled immediately: the device answers a cancel with one F 02 and
@@ -1257,9 +1284,8 @@
      */
     function wireRepeat(mode) {
       var button = blocks[mode].repeat;
-      if (!button) return;
 
-      button.addEventListener('click', function () {
+      once(button, function () {
         console.log('[AOBP] repeating the ' + mode + ' measurement');
         takeMeasurement(mode);
       });
