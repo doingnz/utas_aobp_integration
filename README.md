@@ -306,9 +306,36 @@ data. The place to keep the XML is a file:
 1. Add file-upload fields named `seated_raw_xml` and `standing_raw_xml`.
 2. Tick **Store the raw measurement XML as a file on the record**.
 
-The page then calls the module's `save-xml` AJAX action after each measurement,
-and the file lands on the record through `\REDCap::saveFile()`. The External
-Modules framework authenticates that call and scopes it to the calling project.
+The page then calls the module's `save-xml` AJAX action after each measurement.
+Three things have to line up, and each was wrong here at some point:
+
+**The call.** There is no global ajax helper. A page reaches its module through
+the framework's *JavaScript module object*, which the module publishes with
+`initializeJavascriptModuleObject()`; this module puts it on the page as
+`window.AOBP_MODULE`, and `js/aobp.js` calls `AOBP_MODULE.ajax('save-xml', …)`.
+
+**The declaration.** An action must be declared in `config.json` for the context
+it is called from. A survey respondent is not logged in, so `save-xml` appears in
+both lists — `no-auth-ajax-actions` for the survey, `auth-ajax-actions` for a
+coordinator opening the same instrument as a data-entry form.
+
+**The saving, which is two steps.**
+
+```php
+$docId = \REDCap::storeFile($tmpFile, $project_id, $filename);
+\REDCap::addFileToField($docId, $project_id, $record, $field, $event_id, $repeat_instance);
+```
+
+`storeFile()` copies the bytes into REDCap's edoc store and returns a doc id, or
+0. That gets the file onto the server and nowhere near the participant. It is
+`addFileToField()` that puts it on the record, and it is the step that makes the
+file visible on the form and downloadable afterwards. **The instance is not
+optional here:** `aobp_visit` repeats, and a file filed without one lands on the
+first instance whatever visit it came from.
+
+`\REDCap::saveFile()` is not a REDCap method. This module called it, inherited
+from `aobp_integration_v1.0.1`, and it would have failed with *undefined method*
+the first time it ran.
 
 **What the text field then holds.** The XML is written whole first, and replaced
 by a marker once the file is confirmed stored:
@@ -331,14 +358,11 @@ is not a console warning: the operator is told, and a **Resend recording** butto
 appears, which retries without asking the participant to sit through another
 measurement.
 
-This path needs a REDCap instance to exercise. Two things to confirm on your
-installation:
-
-- whether the `save-xml` action must be declared for use from a survey page,
-  where the respondent is not a logged-in user — the framework's
-  `no-auth-ajax-actions` list in `config.json` is the usual answer;
-- whether `$record` and `$repeat_instance` are populated mid-survey, since a
-  file cannot attach to a record that does not exist yet.
+One thing still needs a REDCap instance to settle: whether `$record` is
+populated mid-survey. A file cannot attach to a record that does not exist, and
+on a survey the record is created when the first page is submitted. The module
+says so plainly rather than failing obscurely — *"This survey has no record yet,
+so the recording cannot be filed. Save the page, then press Resend recording."*
 
 ---
 

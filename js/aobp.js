@@ -868,15 +868,21 @@
       var cfg = window.AOBP_CONFIG || {};
       if (!cfg.saveXmlAsFile || !xml) return;
 
-      if (typeof ExternalModules === 'undefined' || !ExternalModules.ajax) {
-        uploadFailed(mode, 'The External Modules helper is not on this page.');
+      // The framework's JavaScript module object, put on the page by
+      // AobpIntegration.php with initializeJavascriptModuleObject(). It carries
+      // the module prefix and the survey's token; a bare POST to the module has
+      // neither. The framework publishes no global ajax helper — this page
+      // called one for months, and nothing was ever there to answer it.
+      var em = window.AOBP_MODULE;
+      if (!em || typeof em.ajax !== 'function') {
+        uploadFailed(mode, 'This page did not load the module AJAX object.');
         return;
       }
 
       pendingXml[mode] = xml;
 
       try {
-        var reply = await ExternalModules.ajax('save-xml', { mode: mode, xml: xml });
+        var reply = await em.ajax('save-xml', { mode: mode, xml: xml });
 
         if (!reply || reply.status !== 'success') {
           uploadFailed(mode, (reply && reply.message) || 'The server did not say why.');

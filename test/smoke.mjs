@@ -639,7 +639,36 @@ console.log('\nthe recording is filed, not truncated');
 
   // No server on the demo host, so the harness answers the call itself.
   check('the harness stands in for the module endpoint',
-    /window\.ExternalModules/.test(visit) && /save-xml/.test(visit));
+    /window\.AOBP_MODULE/.test(visit) && /save-xml/.test(visit));
+
+  // The framework has no global ExternalModules.ajax(). Reaching a module from
+  // a page means its own JavaScript module object, published by
+  // initializeJavascriptModuleObject() — which this module never called, so the
+  // call the page made could not have been answered by anything.
+  const php = fs.readFileSync(new URL('../AobpIntegration.php', import.meta.url), 'utf8');
+  const cfg = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
+
+  check('the module publishes its JavaScript object',
+    /initializeJavascriptModuleObject\(\)/.test(php) &&
+    /getJavascriptModuleObjectName\(\)/.test(php));
+  check('and the page calls that, not a global that does not exist',
+    /window\.AOBP_MODULE/.test(app) && !app.includes('ExternalModules.ajax'));
+
+  // A survey respondent is not logged in, so the action has to be declared for
+  // the unauthenticated context or the framework refuses it.
+  check('save-xml is declared for surveys and for logged-in users',
+    (cfg['no-auth-ajax-actions'] || []).includes('save-xml') &&
+    (cfg['auth-ajax-actions'] || []).includes('save-xml'));
+
+  // storeFile() registers the bytes and returns a doc id; addFileToField() is
+  // what puts that doc on the record, with the instance. Neither alone is
+  // enough, and REDCap::saveFile — what this module called until now — is not a
+  // method REDCap has.
+  check('the file is stored and then attached, with the instance',
+    /REDCap::storeFile\(/.test(php) &&
+    /REDCap::addFileToField\(/.test(php) &&
+    /\$repeat_instance/.test(php.slice(php.indexOf('addFileToField'))) &&
+    !php.includes('REDCap::saveFile'));
 
   // The stand-in is a classic script and the harness's own helpers live in a
   // <script type="module"> — module scope, invisible from it. Calling one threw

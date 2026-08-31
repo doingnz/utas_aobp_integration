@@ -445,9 +445,10 @@
             <span class="chip ok">expect</span>
             <p>A file appears on <code>seated_raw_xml</code>, roughly 125 kB.</p>
             <span class="chip bad">if not</span>
-            <p>The browser console carries the reason. The likely one is that the AJAX
-              action must be declared for a context where the respondent is not a
-              logged-in user — see below.</p>
+            <p>The console carries the reason, and the module writes one to the project
+              log either way — <em>AOBP recording stored</em> with the doc id, or
+              <em>AOBP recording failed</em> with the message. Check the log first: it
+              says whether the call arrived at all.</p>
           </div>
         </div>
       </div>
@@ -457,10 +458,17 @@
         <h3>Is the file on the right record and instance?</h3>
         <div class="step-body">
           <p>
-            <code>aobp_visit</code> is a repeating instrument. The module hands REDCap
-            whatever <code>redcap_module_ajax</code> supplies for
-            <code>$record</code>, <code>$event_id</code> and <code>$repeat_instance</code>,
-            and a file cannot attach to a record that does not exist yet.
+            <strong>Confirm first that <code>aobp_visit</code> is enabled as a repeating
+            instrument</strong> — Project Setup ▸ Repeatable Instruments and Events. A
+            data dictionary cannot express that; it is project configuration and does not
+            travel in the CSV. The dictionary reads as though it repeats (23
+            <code>[current-instance]</code> references and a <code>sys_aobp_instance</code>
+            field), but only the project itself can say.
+          </p>
+          <p>
+            It matters here: <code>addFileToField()</code> takes the instance, and a file
+            filed without one lands on instance 1 whatever visit produced it. The module
+            passes whatever <code>redcap_module_ajax</code> hands it.
           </p>
           <div class="outcome">
             <span class="chip ok">expect</span>
@@ -559,28 +567,65 @@
   </section>
 
   <section>
-    <h2>If step 1 fails</h2>
+    <h2>How the recording reaches the record</h2>
+    <p>
+      This was wrong in three separate ways when the package was first built, and
+      none of them would have shown up before install. All three are fixed; they are
+      set out here so you can check the code against your own REDCap rather than take
+      our word for it.
+    </p>
+
     <div class="flag">
       <p>
-        <strong>Most likely cause.</strong> The External Modules framework treats a
-        survey respondent as unauthenticated, and an AJAX action may have to be declared
-        before it can be called from there. If the console shows the request rejected
-        rather than a <code>REDCap::saveFile</code> error, try adding this to
-        <code>config.json</code> beside <code>"framework-version"</code>:
-      </p>
-      <pre>"no-auth-ajax-actions": ["save-xml"],</pre>
-      <p>
-        We have not been able to verify that key name against your framework version —
-        please check it against the documentation for the REDCap you are running rather
-        than taking it from us.
+        <strong><code>\REDCap::saveFile()</code> does not exist.</strong> It was in
+        <code>aobp_integration_v1.0.1/ajax.php</code> and we carried it forward rather
+        than substituting a guess. It appears nowhere in REDCap and nowhere in any
+        published module — a search of every public PHP repository returns no use of it
+        at all, against sixteen for <code>storeFile</code>. It would have failed with
+        <em>undefined method</em> the first time a measurement finished.
       </p>
     </div>
+
+    <h3>Saving is two calls, and both are needed</h3>
+    <pre>$docId = \REDCap::storeFile($tmpFile, $project_id, $filename);
+\REDCap::addFileToField($docId, $project_id, $record, $field, $event_id, $repeat_instance);</pre>
     <p>
-      The other possibility is <code>\REDCap::saveFile()</code> itself. That call, with
-      its ten positional arguments, is the one from your
-      <code>aobp_integration_v1.0.1/ajax.php</code> — we kept it rather than substituting
-      our own guess, but we have never seen it run. If it is the wrong method for this
-      REDCap version, <code>REDCap::addFileToField()</code> is the first alternative to try.
+      <code>storeFile()</code> copies the bytes into the edoc store and returns a doc
+      id, or 0 — that gets the file onto the server and nowhere near the participant.
+      <code>addFileToField()</code> is what puts it on the record, and is the step that
+      makes it visible on the form and downloadable later.
+      <strong>The instance is not optional:</strong> <code>aobp_visit</code> repeats,
+      and a file filed without one lands on the first instance whatever visit it came
+      from.
+    </p>
+    <p>
+      This is the pattern used by
+      <a href="https://github.com/Nottingham-CTU/Advanced-Reports">Nottingham-CTU/Advanced-Reports</a>
+      (report written to a temp file, then stored and attached with an instance) and by
+      <a href="https://github.com/uwctri/AudioRecorder">uwctri/AudioRecorder</a>, which
+      is our case almost exactly: a browser records, posts to the module, and the module
+      files the result. The older
+      <a href="https://github.com/ctsit/save_survey_pdf_to_field">ctsit/save_survey_pdf_to_field</a>
+      does the same job through <code>Files::uploadFile()</code> and a hand-written
+      <code>INSERT</code>, which we have not followed.
+    </p>
+
+    <h3>The page reaches the module through its own object</h3>
+    <p>
+      There is no global ajax helper — our page called one for months and nothing was
+      ever there to answer it. The module now publishes the framework's JavaScript
+      module object with <code>initializeJavascriptModuleObject()</code> and puts it on
+      the page as <code>window.AOBP_MODULE</code>;
+      <code>js/aobp.js</code> calls <code>AOBP_MODULE.ajax('save-xml', …)</code>.
+    </p>
+
+    <h3>The action is declared for both contexts</h3>
+    <pre>"auth-ajax-actions":    ["save-xml"],
+"no-auth-ajax-actions": ["save-xml"],</pre>
+    <p>
+      A survey respondent is not logged in, so without the second list the framework
+      refuses the call. The first covers a coordinator opening the same instrument as a
+      data-entry form. Both are now in <code>config.json</code>.
     </p>
   </section>
 

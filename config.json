@@ -4,6 +4,12 @@
   "description": "Records an AOBP blood pressure measurement from a Uscom BP+ device directly into a REDCap survey, using the BP+ JavaScript SDK.",
   "version": "1.0.0",
   "framework-version": 15,
+  "auth-ajax-actions": [
+    "save-xml"
+  ],
+  "no-auth-ajax-actions": [
+    "save-xml"
+  ],
   "authors": [
     {
       "name": "Richard Scott",

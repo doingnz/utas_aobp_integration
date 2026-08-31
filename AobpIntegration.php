@@ -38,6 +38,16 @@ class AobpIntegration extends AbstractExternalModule
 
         if ($instrument === $this->aobpInstrument()) {
             $this->emitAobpConfig($project_id, $record, $event_id, $repeat_instance);
+
+            // The framework's own JavaScript object, and the only supported way
+            // to reach redcap_module_ajax() from a page. It carries the module
+            // prefix and the survey's CSRF token, which a bare POST does not.
+            // The page finds it at window.AOBP_MODULE.
+            echo $this->initializeJavascriptModuleObject();
+            echo '<script>window.AOBP_MODULE = '
+                . $this->getJavascriptModuleObjectName() . ';</script>' . "
+";
+
             $this->emitScript('js/aobp.js');
         }
     }
@@ -45,7 +55,7 @@ class AobpIntegration extends AbstractExternalModule
     /**
      * Store one measurement's raw XML as a file on the record.
      *
-     * Reached from the page with ExternalModules.ajax('save-xml', payload).
+     * Reached from the page with AOBP_MODULE.ajax('save-xml', payload).
      * The framework authenticates the call and supplies $project_id, so unlike
      * a bare POST endpoint this cannot be aimed at another project.
      *
@@ -88,6 +98,18 @@ class AobpIntegration extends AbstractExternalModule
 
         $field = $mode === 'standing' ? 'standing_raw_xml' : 'seated_raw_xml';
 
+        // A file cannot be attached to a record that does not exist. On a survey
+        // the record is created when the first page is submitted, so a
+        // measurement taken before that has nowhere to go — said plainly here,
+        // because the page can offer Resend once the record exists.
+        if ((string) $record === '') {
+            return [
+                'status'  => 'error',
+                'message' => 'This survey has no record yet, so the recording cannot be '
+                           . 'filed. Save the page, then press Resend recording.',
+            ];
+        }
+
         $tmpFile = tempnam(sys_get_temp_dir(), 'aobp_');
         if ($tmpFile === false) {
             return ['status' => 'error', 'message' => 'Could not create a temporary file.'];
@@ -100,25 +122,60 @@ class AobpIntegration extends AbstractExternalModule
 
             $filename = $record . '_inst' . $repeat_instance . '_' . $mode . '_aobp.xml';
 
-            $saved = \REDCap::saveFile(
-                $tmpFile,
+            // Two steps, and both are required.
+            //
+            // storeFile() copies the file into REDCap's edoc store and registers
+            // it, returning a doc id — or 0. That gets it onto the server and
+            // nowhere near the participant: nothing yet says which record, event,
+            // instance or field it belongs to.
+            //
+            // addFileToField() is what puts it on the record, and is the step
+            // that makes it visible on the form and downloadable afterwards.
+            // The instance matters here: aobp_visit repeats, and a file filed
+            // without one lands on the first instance whatever visit it came
+            // from.
+            $docId = \REDCap::storeFile($tmpFile, $project_id, $filename);
+            if (!$docId) {
+                throw new Exception('REDCap::storeFile did not store the file.');
+            }
+
+            $linked = \REDCap::addFileToField(
+                $docId,
                 $project_id,
                 $record,
                 $field,
                 $event_id,
-                $repeat_instance,
-                null,
-                null,
-                null,
-                $filename
+                $repeat_instance
             );
 
-            if (!$saved) {
-                throw new Exception('REDCap::saveFile did not store the file.');
+            if (!$linked) {
+                throw new Exception(
+                    'The file was stored as doc ' . $docId .
+                    ' but REDCap::addFileToField did not attach it to ' . $field . '.'
+                );
             }
 
-            return ['status' => 'success', 'field' => $field, 'filename' => $filename];
+            $this->log('AOBP recording stored', [
+                'record'   => $record,
+                'instance' => $repeat_instance,
+                'field'    => $field,
+                'doc_id'   => $docId,
+                'bytes'    => strlen($xml),
+            ]);
+
+            return [
+                'status'   => 'success',
+                'field'    => $field,
+                'filename' => $filename,
+                'doc_id'   => $docId,
+            ];
         } catch (Exception $e) {
+            $this->log('AOBP recording failed', [
+                'record'   => $record,
+                'instance' => $repeat_instance,
+                'field'    => $field,
+                'message'  => $e->getMessage(),
+            ]);
             return ['status' => 'error', 'message' => $e->getMessage()];
         } finally {
             if (is_file($tmpFile)) {

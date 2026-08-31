@@ -232,7 +232,7 @@ document.body.appendChild(hidden);
 window.AOBP_CONFIG = {
   record: document.getElementById('record').value,
   event_id: '1', repeat_instance: '1', pid: '0',
-  sdkUrl: new URL('../sdk/index.js?v=1.7.22', location.href).href,
+  sdkUrl: new URL('../sdk/index.js?v=1.7.23', location.href).href,
   saveXmlAsFile: true,    // posts to the EM stand-in at the foot of this page
   clockToleranceMinutes: 5,
   trace: true,
@@ -243,13 +243,13 @@ document.getElementById('record').addEventListener('input', function () {
 });
 </script>
 
-<script src="../js/aobp.js?v=1.7.22"></script>
+<script src="../js/aobp.js?v=1.7.23"></script>
 
 <script type="module">
-import * as sdk from '../sdk/index.js?v=1.7.22';
+import * as sdk from '../sdk/index.js?v=1.7.23';
 
-const BUILD = '1.7.22';
-const BUILT = '2026-08-31';
+const BUILD = '1.7.23';
+const BUILT = '2026-09-01';
 const $ = id => document.getElementById(id);
 
 $('build-banner').textContent = `visit harness build ${BUILD} · ${BUILT}`;
@@ -339,7 +339,7 @@ renderFields();
 
 <!-- ── Stand-in for the REDCap External Module ──────────────────────────────
      No server here: this page is static hosting. The module calls
-     ExternalModules.ajax('save-xml', …) exactly as it does inside REDCap, and
+     AOBP_MODULE.ajax('save-xml', …) exactly as it does inside REDCap, and
      this catches the call, shows what would have been posted, and keeps the
      bytes in the browser so they can be opened, saved and checked.
 
@@ -422,7 +422,10 @@ async function sha256Hex(text) {
 
 // The same shape the External Modules helper gives a module in REDCap: one
 // call, a promise, and a plain object back.
-window.ExternalModules = {
+// Named and shaped exactly as the framework's JavaScript module object, which
+// is what the page reaches for: AobpIntegration.php publishes the real one with
+// initializeJavascriptModuleObject().
+window.AOBP_MODULE = {
   async ajax(action, payload) {
     const cfg = window.AOBP_CONFIG || {};
     console.log('[EM stand-in] ' + action, { mode: payload.mode, bytes: payload.xml.length });
