@@ -409,21 +409,19 @@
           </tr>
           <tr>
             <td>Added</td>
-            <td class="mono">seated_cancel_btn, standing_cancel_btn<br>
+            <td class="mono">seated_snr, standing_snr<br>
+                seated_cancel_btn, standing_cancel_btn<br>
                 ui_alerts_seated, ui_alerts_standing<br>
                 ui_visit_state_seated, ui_visit_state_standing</td>
-            <td>Cancel while a measurement is running; the device's own account of a
-                measurement; and what the visit still needs</td>
+            <td>Signal-to-noise ratio as the device reports it, hidden and read-only
+                like the other device-written fields; Cancel while a measurement is
+                running; the device's own account of a measurement; and what the visit
+                still needs</td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <p>
-      One observation, unchanged from your file: <code>seated_unfinished</code> and
-      <code>standing_unfinished</code> have empty field labels. If REDCap rejects the
-      import, that is the first place to look.
-    </p>
   </section>
 
   <section>
@@ -584,28 +582,6 @@
       our own guess, but we have never seen it run. If it is the wrong method for this
       REDCap version, <code>REDCap::addFileToField()</code> is the first alternative to try.
     </p>
-  </section>
-
-  <section>
-    <h2>Fields the module writes that the instrument doesn't have</h2>
-    <p>
-      Two, and they need a decision rather than a fix. The module writes them and logs
-      a console warning when the field is absent; nothing breaks.
-    </p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Field</th><th>What it carries</th><th>Decision</th></tr></thead>
-        <tbody>
-          <tr>
-            <td class="mono">seated_snr<br>standing_snr</td>
-            <td>Signal-to-noise ratio for the determination, as the device reports it</td>
-            <td>Add as numeric fields, or we drop them. Worth having: it is the one
-              number that separates a clean measurement from a marginal one, and the
-              context is otherwise lost when the XML leaves the page</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
   </section>
 
   <section>

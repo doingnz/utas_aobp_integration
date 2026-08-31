@@ -539,6 +539,75 @@ console.log('\na cancel says who asked for it');
     JSON.stringify({ code: deviceCancel?.code, reason: deviceCancel?.reason }));
 }
 
+// -- The dictionary REDCap has to swallow ---------------------------------
+// A csv.writer rewrite quoted the byte-order mark into the first field, so the
+// first column arrived named  "Variable / Field Name"  with the quotes as part
+// of the name. Nothing on this side would have noticed; REDCap would have
+// refused the import, on the morning of the session.
+
+console.log('\nthe extended dictionary is importable');
+
+{
+  const dir = new URL('../data_dictionary/', import.meta.url);
+  const read = name => fs.readFileSync(new URL(name, dir));
+
+  const originalRaw = read('AOBPDEV_DataDictionary_2026-08-31.csv');
+  const extendedRaw = read('AOBPDEV_DataDictionary_2026-08-31_extended.csv');
+
+  // The mark belongs to the file, not to the first field: three bytes, then a
+  // quote that opens the header cell.
+  check('the byte-order mark sits outside the first field',
+    extendedRaw[0] === 0xEF && extendedRaw[1] === 0xBB &&
+    extendedRaw[2] === 0xBF && extendedRaw[3] === 0x22,
+    [...extendedRaw.slice(0, 4)].map(b => b.toString(16)).join(' '));
+
+  // Enough of a CSV parser for a file REDCap itself produced.
+  const LF = String.fromCharCode(10);
+  const CR = String.fromCharCode(13);
+  const parse = buf => {
+    const text = buf.toString('utf8').replace(/^﻿/, '');
+    const rows = [];
+    let row = [], field = '', quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+        else if (c === '"') quoted = false;
+        else field += c;
+      } else if (c === '"') quoted = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === LF) { row.push(field); rows.push(row); row = []; field = ''; }
+      else if (c !== CR) field += c;
+    }
+    if (field || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  };
+
+  const original = parse(originalRaw);
+  const extended = parse(extendedRaw);
+
+  check('the header is the one REDCap exported',
+    JSON.stringify(extended[0]) === JSON.stringify(original[0]),
+    JSON.stringify(extended[0][0]));
+  check('every row has the same number of columns',
+    new Set(extended.map(r => r.length)).size === 1,
+    [...new Set(extended.map(r => r.length))].join('/'));
+
+  const ids = extended.slice(1).map(r => r[0]);
+  check('no duplicate field names',
+    new Set(ids).size === ids.length,
+    ids.filter((id, i) => ids.indexOf(id) !== i).join(', '));
+
+  // Every field the module writes has to exist, or the value goes nowhere and
+  // only a console warning says so.
+  const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+  const written = [...app.matchAll(/^\s+\w+:\s+'(seated_|standing_|sys_)([a-z_]+)',/gm)]
+    .map(m => m[1] + m[2]);
+  const missing = [...new Set(written)].filter(f => !ids.includes(f));
+  check('the instrument has every field the module writes',
+    missing.length === 0, 'missing: ' + missing.join(', '));
+}
+
 // -- The recording goes to a file, and says so if it did not ---------------
 // REDCap keeps only the first part of a value the size of an AOBP XML, so what
 // sat in the notes field was a fragment formatted to look like a whole
