@@ -385,6 +385,20 @@ console.log('\nteardown is deadlined');
     /did not close/.test(src));
   check('an already-open port is closed and reopened rather than refused',
     /already open/i.test(src) && /await this\._port\.open\(settings\);/.test(src));
+
+  // forget() revokes the permission, so the device returns as a new SerialPort
+  // object while the old one still holds the operating system handle. The retry
+  // then meets "Failed to open serial port" — which no retry can clear — and
+  // the operator is sent back to the picker for a port they already granted.
+  check('the recovery never forgets the port',
+    !/\.forget\s*\(/.test(src));
+
+  // Cheaper than waiting to be refused: readable and writable are non-null only
+  // while the port is open, and a port this page holds open is ours to close.
+  const heldAt = src.indexOf('this._port.readable || this._port.writable');
+  const openAt = src.indexOf('await this._port.open(settings)');
+  check('a port this page still holds is closed before it is reopened',
+    heldAt > 0 && heldAt < openAt);
 }
 
 // ── settle() can rethrow when the caller needs to know ──────────────────────

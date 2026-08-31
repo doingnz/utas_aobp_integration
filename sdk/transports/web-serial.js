@@ -62,22 +62,38 @@ export class WebSerialTransport extends Transport {
       flowControl: this._flowControl,
     };
 
-    try {
-      await this._port.open(settings);
-    } catch (err) {
-      // "The port is already open" — this page opened it and something went
-      // wrong before it could be given back. requestPort() hands out the same
-      // SerialPort object for the same device, so this IS our port and we can
-      // close it. Without this the operator's only way out is a page reload,
-      // which on a survey means losing the form.
-      if (!/already open/i.test(err.message || '')) throw err;
-
+    // A port this page still holds open cannot be opened again. An attempt that
+    // failed before teardown finished leaves exactly that, and the handle is
+    // ours, so close it before asking for it back. readable and writable are
+    // non-null only while the port is open, which makes this cheap to check and
+    // safe to skip.
+    if (this._port.readable || this._port.writable) {
       this.emit('warning', {
         message: 'The serial port was still open from an earlier attempt. ' +
                  'Closing it and trying again.',
       });
+      await settle(this._port.close(), 2000);
+    }
 
-      await settle(this._port.forget && this._port.forget(), 500);
+    try {
+      await this._port.open(settings);
+    } catch (err) {
+      // One retry, whatever the browser called it. Chrome says "the port is
+      // already open" when this page holds it, and the far vaguer "failed to
+      // open serial port" when the operating system refuses — which a handle
+      // we abandoned will also produce. Closing costs nothing if the port was
+      // never open: close() simply rejects and settle() drops it.
+      //
+      // Never forget() here. It revokes the permission, so the device comes
+      // back as a NEW SerialPort object while the old one keeps the operating
+      // system handle — turning a recoverable "already open" into a permanent
+      // "failed to open", and sending the operator back to the picker for a
+      // port they had already granted. That was a bug, not a precaution.
+      this.emit('warning', {
+        message: 'The serial port would not open (' + err.message + '). ' +
+                 'Closing it and trying once more.',
+      });
+
       await settle(this._port.close(), 2000);
       await this._port.open(settings);
     }

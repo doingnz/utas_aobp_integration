@@ -879,6 +879,17 @@
                  'then press Connect BP+ again.';
         }
 
+        // Chrome's own words for a port the operating system would not hand
+        // over: "Failed to open serial port." It names no cause, and the two
+        // that matter are both fixable at the desk — another tab or program
+        // holding the cable, or a stale handle that a replug clears. The SDK
+        // has already tried closing and reopening once by the time this shows.
+        if (/failed to open serial port|port is already open/i.test(error.message)) {
+          return 'The USB cable is in use by something else. Close any other ' +
+                 'tab or program using the BP+, then unplug the cable, plug it ' +
+                 'back in, and press Connect BP+ again.';
+        }
+
         return error.message;
       }
       return error.message || String(error);
