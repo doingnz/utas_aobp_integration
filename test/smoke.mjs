@@ -343,6 +343,43 @@ console.log('\npartial open releases the port');
     /could not take the reader/.test(message), message);
 }
 
+// ── Teardown must not hang ───────────────────────────────────────────────────
+// The port is opened with hardware flow control. With a cable in the PC but not
+// in a BP+, nothing asserts CTS, pending writes never drain, and a writer
+// close() waits for ever — which froze a connect that had already timed out,
+// leaving every button disabled and no error on screen.
+
+console.log('\nteardown is deadlined');
+
+{
+  const src = fs.readFileSync(new URL('../sdk/transports/web-serial.js', import.meta.url), 'utf8');
+
+  check('the writer is aborted, not closed',
+    /_writer\.abort\(\)/.test(src) && !/await this\._writer\.close\(\)/.test(src));
+  check('every teardown step is deadlined',
+    (src.match(/await settle\(/g) || []).length >= 3);
+
+  // The helper itself: a promise that never settles must not hold up cleanup.
+  const settle = new Function('promise', 'ms',
+    src.match(/function settle\(promise, ms\) \{[\s\S]*?\n\}/)[0].replace('function settle(promise, ms) {', '')
+       .replace(/\n\}$/, '')
+       .replace('return Promise.race', 'return Promise.race'));
+
+  const never = new Promise(() => {});
+  const started = Date.now();
+  await settle(never, 120);
+  const waited = Date.now() - started;
+
+  check('a step that never returns gives up at the deadline',
+    waited >= 100 && waited < 1000, waited + 'ms');
+  check('a missing step resolves at once', (await settle(null, 5000)) === undefined);
+
+  let rejectedHandled = true;
+  try { await settle(Promise.reject(new Error('port gone')), 500); }
+  catch { rejectedHandled = false; }
+  check('a step that throws is swallowed, not rethrown', rejectedHandled);
+}
+
 // ── A measurement started on the device is refused ───────────────────────────
 // The BP+ has its own Start button. A measurement begun there carries no
 // patient ID and belongs to no record, so a host that records against a

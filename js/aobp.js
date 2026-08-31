@@ -343,7 +343,15 @@
         var shortfall = capabilityShortfall(features, apiVersion);
         if (shortfall) throw new Error(shortfall);
       } catch (error) {
-        try { await device.disconnect(); } catch (ignored) { /* already gone */ }
+        // Bounded, and the result ignored. The operator is owed the reason this
+        // failed; giving the port back matters, but not enough to wait on. The
+        // SDK deadlines its own teardown — this is here so that a future change
+        // to it cannot leave a nurse looking at a frozen page.
+        await Promise.race([
+          device.disconnect().catch(function () { /* already gone */ }),
+          new Promise(function (resolve) { setTimeout(resolve, 4000); }),
+        ]);
+
         device = null;
         features = null;
         throw error;

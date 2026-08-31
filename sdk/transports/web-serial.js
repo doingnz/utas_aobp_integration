@@ -86,19 +86,50 @@ export class WebSerialTransport extends Transport {
     await this._writer.write(bytes);
   }
 
+  /**
+   * Give the port back, and never block doing it.
+   *
+   * Every step here is best-effort and deadlined, because this runs on the path
+   * where something has already gone wrong and the caller is waiting to report
+   * it. A cleanup that hangs turns a reported failure into a frozen page.
+   *
+   * `abort()`, not `close()`, on the writer. close() waits for pending writes to
+   * drain, and the port is opened with hardware flow control: with a cable in
+   * the PC but not in a BP+, nothing asserts CTS, the bytes never leave, and
+   * close() waits for ever. Measured exactly that way — a connect that timed out
+   * on `f` then hung in its own cleanup, leaving the operator on "Checking the
+   * BP+" with every button disabled. abort() discards what could not be sent,
+   * which is the right answer for a link being torn down.
+   */
   async _close() {
     // Cancel the reader first so the read loop ends before the port closes;
     // closing underneath an active reader throws in some Chrome versions.
-    try { if (this._reader) await this._reader.cancel(); } catch { /* already gone */ }
+    await settle(this._reader && this._reader.cancel(), 1000);
     try { if (this._reader) this._reader.releaseLock(); } catch { /* already gone */ }
-    try { if (this._writer) await this._writer.close(); } catch { /* already gone */ }
+
+    await settle(this._writer && this._writer.abort(), 1000);
     try { if (this._writer) this._writer.releaseLock(); } catch { /* already gone */ }
-    try { if (this._port)   await this._port.close(); } catch { /* already gone */ }
+
+    await settle(this._port && this._port.close(), 2000);
 
     this._reader = null;
     this._writer = null;
     this._port   = null;
   }
+}
+
+/**
+ * Wait for a teardown step, but not for ever.
+ *
+ * Resolves when the promise settles either way, or when the deadline passes —
+ * a step that never comes back must not hold up the rest of the cleanup.
+ */
+function settle(promise, ms) {
+  if (!promise || typeof promise.then !== 'function') return Promise.resolve();
+  return Promise.race([
+    promise.then(() => {}, () => {}),
+    new Promise(resolve => setTimeout(resolve, ms)),
+  ]);
 }
 
 function hex4(n) {
