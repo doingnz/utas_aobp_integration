@@ -32,6 +32,13 @@ export const ErrorReason = {
   noAnswer:    'noAnswer',
   /** The command could not even be sent. */
   writeFailed: 'writeFailed',
+  /**
+   * The host asked for the measurement to stop. F 02 is the same code whether
+   * the host sent `c` or somebody pressed the button on the device, and the two
+   * want different words: one is the operator's own action, and telling them it
+   * happened "at the device" is simply wrong.
+   */
+  cancelledByHost: 'cancelledByHost',
 };
 
 export class BpPlusError extends Error {

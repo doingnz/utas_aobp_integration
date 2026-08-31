@@ -883,8 +883,14 @@
       // A BpPlusError already carries a sentence written for a person, and a
       // Table 5 code a script can branch on.
       if (error.code !== undefined && error.message) {
+        // Who stopped it decides how it reads. F 02 comes back the same either
+        // way, so the SDK tags the cancel it was asked to send; without that
+        // the page told an operator who had just pressed Cancel that the
+        // measurement had been cancelled at the device.
         if (sdk && error.code === sdk.ResultCode.cancelled) {
-          return 'the measurement was cancelled at the device. Press start to try again.';
+          return error.reason === sdk.ErrorReason.cancelledByHost
+            ? 'Measurement cancelled. Press start when you are ready.'
+            : 'The measurement was stopped at the BP+. Press start to try again.';
         }
 
         // A result the device produced but that is not a reading: the cuff and
@@ -965,8 +971,15 @@
         try {
           if (retrying) await verify();
           else await connect();
-          setStatus('success', 'BP+ connected' +
-            (deviceIsAobp() ? '' : ' — the device is NOT in AOBP mode'), 'all');
+          setStatus(deviceIsAobp() ? 'success' : 'error',
+            deviceIsAobp()
+              ? 'BP+ connected.'
+              : 'BP+ connected, but it is not in AOBP mode, so it would ' +
+                'measure the wrong thing. ' +
+                (canSetAobpMode() && ui.setAobp
+                  ? 'Press Set AOBP mode to switch it.'
+                  : 'It must be switched to AOBP mode before it can be used.'),
+            'all');
           hideConnectButtons();
           updateButtons();
         } catch (error) {
@@ -1178,7 +1191,19 @@
       // `features`, not just `device`: a port that opened but has not yet
       // answered `f` leaves a device object with nothing proven on the end of
       // it, and the operator must not be handed live Start buttons for it.
-      var ready = !!device && !!features && !busy;
+      var linked = !!device && !!features && !busy;
+
+      // A BP+ that is not in AOBP mode measures something else. Suprasystolic
+      // mode produces a central pressure waveform from one inflation — a
+      // perfectly good measurement, and not the three-reading average this
+      // study records. Taken by mistake it writes a number into seated_ave_sys
+      // that no protocol produced, against a participant, and nothing
+      // downstream can tell it apart from a real one afterwards.
+      //
+      // So the measurement is refused, not warned about. The device says which
+      // mode it is in and can be told to change, which makes this the rare case
+      // where a check at connect can be trusted for the whole visit.
+      var ready = linked && deviceIsAobp();
 
       setEnabled(ui.seated,   ready);
       setEnabled(ui.standing, ready);
@@ -1187,8 +1212,13 @@
       for (var mode in blocks) {
         setEnabled(blocks[mode].cancel, !!device && busy);
       }
-      setEnabled(ui.setAobp,  ready && canSetAobpMode());
-      setEnabled(ui.ping,     ready);
+
+      // Both gated on `linked`, not `ready`: Set AOBP mode is how the wrong
+      // mode gets fixed, so gating it on being in the right mode already would
+      // leave the operator with every control dead and no way out. Ping asks
+      // whether the link is alive, which is a fair question in any mode.
+      setEnabled(ui.setAobp,  linked && canSetAobpMode());
+      setEnabled(ui.ping,     linked);
 
       renderVisitState();
     }

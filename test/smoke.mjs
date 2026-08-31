@@ -443,7 +443,14 @@ console.log('\nan unanswered port is retried, not reopened');
   // Otherwise the operator gets live Start buttons for a port with nothing
   // proven on the end of it.
   check('an unverified device does not arm the Start buttons',
-    /var ready = !!device && !!features && !busy;/.test(app));
+    /var linked = !!device && !!features && !busy;/.test(app));
+
+  // Suprasystolic mode measures something else entirely. A reading taken in it
+  // lands in seated_ave_sys looking exactly like a protocol one.
+  check('and neither does a device in the wrong mode',
+    /var ready = linked && deviceIsAobp\(\);/.test(app));
+  check('but Set AOBP mode stays live, or there is no way out',
+    /setEnabled\(ui\.setAobp,  linked && canSetAobpMode\(\)\)/.test(app));
 
   // A cable pulled out of the computer kills the port. Retrying on it for ever
   // would be the cost of keeping it.
@@ -452,6 +459,31 @@ console.log('\nan unanswered port is retried, not reopened');
     /removeEventListener\('disconnect'/.test(trans));
   check('and the page then falls back to a fresh port',
     /if \(device && !device\.transport\.isConnected\) device = null;/.test(app));
+}
+
+// -- Who cancelled it ------------------------------------------------------
+// F 02 comes back whether the host sent `c` or somebody pressed the button on
+// the device. Telling an operator who has just pressed Cancel that the
+// measurement was cancelled at the device is simply untrue.
+
+console.log('\na cancel says who asked for it');
+
+{
+  const { ErrorReason } = await import('../sdk/core/errors.js');
+  const src = fs.readFileSync(
+    new URL('../sdk/device/bpplus-device.js', import.meta.url), 'utf8');
+  const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+
+  check('the SDK has a name for a host-sent cancel',
+    ErrorReason.cancelledByHost === 'cancelledByHost');
+  check('cancel() records that it was asked',
+    /this\._cancelRequested = true;/.test(src));
+  check('and each measurement starts without one remembered',
+    /this\._cancelRequested = false;/.test(src));
+  check('the tag reaches the error the measurement rejects with',
+    /ErrorReason\.cancelledByHost/.test(src));
+  check('the page words it by who did it',
+    /cancelledByHost/.test(app) && /stopped at the BP\+/.test(app));
 }
 
 // -- The SDK classifies, and says what to do -------------------------------
