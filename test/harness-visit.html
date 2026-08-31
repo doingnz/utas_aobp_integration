@@ -155,7 +155,6 @@
           <button id="connect-bp-btn-seated" type="button">Connect BP+</button>
           <button id="start-seated-btn" type="button">Start seated</button>
           <button id="cancel-bp-btn-seated" type="button" class="danger">Cancel</button>
-          <button id="repeat-btn-seated" type="button" class="secondary" style="display:none">Repeat</button>
         </div>
 
         <div id="status-display-seated" style="margin-bottom:10px"></div>
@@ -179,7 +178,6 @@
             <button id="connect-bp-btn-standing" type="button">Connect BP+</button>
             <button id="start-standing-btn" type="button">Start standing</button>
             <button id="cancel-bp-btn-standing" type="button" class="danger">Cancel</button>
-            <button id="repeat-btn-standing" type="button" class="secondary" style="display:none">Repeat</button>
           </div>
 
           <div id="status-display-standing" style="margin-bottom:10px"></div>
@@ -234,7 +232,7 @@ document.body.appendChild(hidden);
 window.AOBP_CONFIG = {
   record: document.getElementById('record').value,
   event_id: '1', repeat_instance: '1', pid: '0',
-  sdkUrl: new URL('../sdk/index.js?v=1.7.11', location.href).href,
+  sdkUrl: new URL('../sdk/index.js?v=1.7.12', location.href).href,
   saveXmlAsFile: false,
   clockToleranceMinutes: 5,
   trace: true,
@@ -246,12 +244,12 @@ document.getElementById('record').addEventListener('input', function () {
 });
 </script>
 
-<script src="../js/aobp.js?v=1.7.11"></script>
+<script src="../js/aobp.js?v=1.7.12"></script>
 
 <script type="module">
-import * as sdk from '../sdk/index.js?v=1.7.11';
+import * as sdk from '../sdk/index.js?v=1.7.12';
 
-const BUILD = '1.7.11';
+const BUILD = '1.7.12';
 const BUILT = '2026-08-31';
 const $ = id => document.getElementById(id);
 

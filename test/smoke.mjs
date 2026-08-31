@@ -139,17 +139,15 @@ if (!JSDOM) {
   // by the bare id would give both blocks the seated one.
   const twoBlock = `<!doctype html><html><body>
     <button id="connect-bp-btn-seated"></button>
-    <button id="start-seated-btn"></button>
+    <button id="start-seated-btn">Start seated</button>
     <button id="cancel-bp-btn-seated"></button>
-    <button id="repeat-btn-seated"></button>
     <div id="status-display-seated"></div>
     <div id="alerts-display-seated"></div>
     <div id="visit-state-seated"></div>
     <div id="seated-results-panel"></div>
     <button id="connect-bp-btn-standing"></button>
-    <button id="start-standing-btn"></button>
+    <button id="start-standing-btn">Start standing</button>
     <button id="cancel-bp-btn-standing"></button>
-    <button id="repeat-btn-standing"></button>
     <div id="status-display-standing"></div>
     <div id="alerts-display-standing"></div>
     <div id="visit-state-standing"></div>
@@ -178,8 +176,11 @@ if (!JSDOM) {
     !!el2('visit-state-seated').innerText && !!el2('visit-state-standing').innerText);
   check('both cancel buttons start disabled',
     el2('cancel-bp-btn-seated').disabled && el2('cancel-bp-btn-standing').disabled);
-  check('both repeat buttons start disabled',
-    el2('repeat-btn-seated').disabled && el2('repeat-btn-standing').disabled);
+  // One control per position, saying what pressing it will do. A separate
+  // Repeat button sat beside Start running the identical call, which gave the
+  // operator two ways to do one thing and no way to tell them apart.
+  check('Start says Start before there is anything to repeat',
+    el2('start-seated-btn').textContent.trim() === 'Start seated');
 }
 
 
@@ -462,15 +463,23 @@ console.log('\nerrors read as something to do');
   check('a device that goes away puts Connect back',
     /device\.on\('state'/.test(app) && /function showConnectButtons/.test(app));
 
-  // The dictionary ships Repeat Measurement with an inline display:none, so
-  // enabling it changes nothing an operator can see. A disabled button and an
-  // invisible one are the same button from the chair.
-  check('Repeat is revealed, not just enabled',
-    /setShown\(blocks\[mode\]\.repeat, canRepeat\)/.test(app));
-
+  // The separate Repeat button is gone; Start carries both jobs and renames
+  // itself, so one control per position says what pressing it will do.
   const visit = fs.readFileSync(new URL('harness-visit.html', import.meta.url), 'utf8');
-  check('and the stand-in ships it hidden, as the instrument does',
-    (visit.match(/id="repeat-btn-(seated|standing)"[^>]*display:none/g) || []).length === 2);
+  const dict  = fs.readFileSync(
+    new URL('../data_dictionary/AOBPDEV_DataDictionary_2026-08-31_extended.csv',
+            import.meta.url), 'utf8');
+
+  check('no Repeat button is left anywhere',
+    !app.includes('repeat-btn') && !visit.includes('repeat-btn') &&
+    !dict.includes('repeat-btn'));
+  check('Start renames itself once that position has a reading',
+    /startLabel\[mode\]\.replace\(/.test(app));
+
+  // Only the word is swapped, so "Start Seated BP" keeps the instrument's own
+  // wording for the position rather than being replaced wholesale.
+  check('and only the word Start is swapped',
+    app.includes("'Repeat')") && /relabel\('seated',/.test(app));
 }
 
 // ── settle() can rethrow when the caller needs to know ──────────────────────

@@ -18,8 +18,6 @@
  *   #connect-bp-btn        starts the browser's serial port picker
  *   #status-display        the single large status line
  *   #cancel-bp-btn         optional; live only while a measurement is running
- *   #repeat-btn            optional; retakes that position, replacing what is
- *                          stored. Live only once there is something to replace
  *   #alerts-display        optional; what the device said about the measurement
  *   #visit-state           optional; what the record still needs, and whether
  *                          it is ready to submit
@@ -163,7 +161,6 @@
         status:  control('status-display', mode),
         alerts:  control('alerts-display', mode),
         visit:   control('visit-state', mode),
-        repeat:  control('repeat-btn', mode),
         panel:   document.getElementById(mode + '-results-panel'),
       };
     }
@@ -202,6 +199,18 @@
     };
 
     if (!blocks.seated.connect && !ui.seated && !ui.standing) return;   // not our instrument
+
+    // What each Start button said before anything was measured. Captured here
+    // and not at the wiring below, because updateButtons() runs during start-up
+    // and a `var` read before its assignment is undefined, not an error — the
+    // same trap that once shipped a module dead on load. Captured once, too:
+    // the label is rewritten in place, so reading it back later would compound
+    // whatever it was last set to.
+    var startLabel = {
+      seated:   ui.seated   ? ui.seated.textContent   : '',
+      standing: ui.standing ? ui.standing.textContent : '',
+    };
+
 
     var sdk = null;          // the imported module namespace
     var device = null;
@@ -1164,15 +1173,10 @@
 
       setEnabled(ui.seated,   ready);
       setEnabled(ui.standing, ready);
+      relabel('seated',   ui.seated);
+      relabel('standing', ui.standing);
       for (var mode in blocks) {
         setEnabled(blocks[mode].cancel, !!device && busy);
-        // Shown as well as enabled: the instrument ships this button hidden,
-        // and until now nothing ever revealed it, so Repeat Measurement could
-        // not be reached in REDCap at all. It appears once that position has a
-        // reading to repeat.
-        var canRepeat = ready && hasReading(mode);
-        setEnabled(blocks[mode].repeat, canRepeat);
-        setShown(blocks[mode].repeat, canRepeat);
       }
       setEnabled(ui.setAobp,  ready && canSetAobpMode());
       setEnabled(ui.ping,     ready);
@@ -1336,24 +1340,25 @@
     }
 
     /**
-     * Repeat the measurement for one position.
+     * "Start Seated BP" becomes "Repeat Seated BP" once seated has a reading.
      *
-     * The instrument offers this per block, and it means what it says: take that
-     * reading again, replacing what is stored. Live only once there is something
-     * to replace — offering "repeat" before a first measurement would be a
-     * second Start button with a misleading name.
+     * One button, saying what pressing it will do. It replaces a separate Repeat
+     * button that sat beside Start doing exactly the same thing, which left the
+     * operator two controls for one action and no way to tell them apart.
+     *
+     * Only the word is swapped, so whatever the instrument called the position
+     * survives — "Start Seated BP" and "Start seated" both keep their wording,
+     * and a label that never said "Start" is left alone rather than guessed at.
      */
-    function wireRepeat(mode) {
-      var button = blocks[mode].repeat;
+    function relabel(mode, button) {
+      if (!button || !startLabel[mode]) return;
 
-      once(button, function () {
-        console.log('[AOBP] repeating the ' + mode + ' measurement');
-        takeMeasurement(mode);
-      });
+      var wanted = hasReading(mode)
+        ? startLabel[mode].replace(/\bStart\b/, 'Repeat')
+        : startLabel[mode];
+
+      if (button.textContent !== wanted) button.textContent = wanted;
     }
-
-    wireRepeat('seated');
-    wireRepeat('standing');
 
     setStatus('ready', 'Connect the BP+ to begin.', 'all');
 
@@ -1375,18 +1380,6 @@
 
   function setEnabled(button, enabled) {
     if (button) button.disabled = !enabled;
-  }
-
-  /**
-   * Show or hide a control the instrument ships hidden.
-   *
-   * The dictionary gives Repeat Measurement an inline `display: none`, so
-   * enabling it achieves nothing an operator can see — a disabled button and an
-   * invisible one look identical from the chair. Setting display to '' hands it
-   * back to the stylesheet, which is right whether or not it started hidden.
-   */
-  function setShown(element, shown) {
-    if (element) element.style.display = shown ? '' : 'none';
   }
 
   function delay(ms) {
