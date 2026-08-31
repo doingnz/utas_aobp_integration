@@ -1,0 +1,16 @@
+# One line ending everywhere: LF in the repository AND in the working tree.
+#
+# core.autocrlf is true on the machines this is worked on, which stores LF and
+# checks out CRLF. That is harmless in itself, but it means a file written by a
+# tool (LF) and the same file after a checkout (CRLF) differ byte for byte —
+# which breaks the md5 verification the harness deployment relies on, and makes
+# every checkout look like it changed every file.
+#
+# LF is also what is served: the harness runs from an IIS web root, and the
+# module runs inside REDCap on Linux.
+* text=auto eol=lf
+
+# Binary, and not to be touched.
+*.png binary
+*.jpg binary
+*.pdf binary
