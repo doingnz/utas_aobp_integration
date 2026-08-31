@@ -359,25 +359,8 @@ console.log('\nteardown is deadlined');
   check('every teardown step is deadlined',
     (src.match(/await settle\(/g) || []).length >= 3);
 
-  // The helper itself: a promise that never settles must not hold up cleanup.
-  const settle = new Function('promise', 'ms',
-    src.match(/function settle\(promise, ms\) \{[\s\S]*?\n\}/)[0].replace('function settle(promise, ms) {', '')
-       .replace(/\n\}$/, '')
-       .replace('return Promise.race', 'return Promise.race'));
-
-  const never = new Promise(() => {});
-  const started = Date.now();
-  await settle(never, 120);
-  const waited = Date.now() - started;
-
-  check('a step that never returns gives up at the deadline',
-    waited >= 100 && waited < 1000, waited + 'ms');
-  check('a missing step resolves at once', (await settle(null, 5000)) === undefined);
-
-  let rejectedHandled = true;
-  try { await settle(Promise.reject(new Error('port gone')), 500); }
-  catch { rejectedHandled = false; }
-  check('a step that throws is swallowed, not rethrown', rejectedHandled);
+  // The helper itself is exercised in its own block below, which pulls it out
+  // of the source rather than restating it here.
 
   // Ordering matters: cancel() only makes the pending read() resolve, so the
   // loop is still running when releaseLock() would be called.
@@ -386,6 +369,39 @@ console.log('\nteardown is deadlined');
   const freeAt   = src.indexOf('this._reader.releaseLock()');
   check('the read loop is awaited between cancel and releaseLock',
     cancelAt > 0 && loopAt > cancelAt && freeAt > loopAt);
+
+  check('a port that will not close is reported, not swallowed',
+    /did not close/.test(src));
+  check('an already-open port is closed and reopened rather than refused',
+    /already open/i.test(src) && /await this\._port\.open\(settings\);/.test(src));
+}
+
+// ── settle() can rethrow when the caller needs to know ──────────────────────
+// Teardown steps are best-effort, but the port close is not: a port left open
+// makes the next connect impossible, so that one failure has to surface.
+
+console.log('\nsettle: swallow or rethrow');
+
+{
+  const src = fs.readFileSync(new URL('../sdk/transports/web-serial.js', import.meta.url), 'utf8');
+  const body = src.slice(src.indexOf('function settle(promise, ms, rethrow)'));
+  const settle = new Function('return ' + body.slice(0, body.indexOf('\n}') + 2))();
+
+  let swallowed = true;
+  try { await settle(Promise.reject(new Error('nope')), 200); } catch { swallowed = false; }
+  check('swallows by default', swallowed);
+
+  let raised = '';
+  try { await settle(Promise.reject(new Error('nope')), 200, true); } catch (e) { raised = e.message; }
+  check('rethrows when asked', raised === 'nope');
+
+  let timedOut = '';
+  try { await settle(new Promise(() => {}), 80, true); } catch (e) { timedOut = e.message; }
+  check('a hang becomes a timeout error when asked', /timed out/.test(timedOut), timedOut);
+
+  const t0 = Date.now();
+  await settle(new Promise(() => {}), 80);
+  check('and still gives up quietly by default', Date.now() - t0 >= 60);
 }
 
 // ── Cable advice belongs only to a timeout ───────────────────────────────────

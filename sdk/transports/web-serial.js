@@ -54,13 +54,33 @@ export class WebSerialTransport extends Transport {
       this._filters ? { filters: this._filters } : {}
     );
 
-    await this._port.open({
+    const settings = {
       baudRate:    this._baudRate,
       dataBits:    8,
       stopBits:    1,
       parity:      'none',
       flowControl: this._flowControl,
-    });
+    };
+
+    try {
+      await this._port.open(settings);
+    } catch (err) {
+      // "The port is already open" — this page opened it and something went
+      // wrong before it could be given back. requestPort() hands out the same
+      // SerialPort object for the same device, so this IS our port and we can
+      // close it. Without this the operator's only way out is a page reload,
+      // which on a survey means losing the form.
+      if (!/already open/i.test(err.message || '')) throw err;
+
+      this.emit('warning', {
+        message: 'The serial port was still open from an earlier attempt. ' +
+                 'Closing it and trying again.',
+      });
+
+      await settle(this._port.forget && this._port.forget(), 500);
+      await settle(this._port.close(), 2000);
+      await this._port.open(settings);
+    }
 
     this._reader = this._port.readable.getReader();
     this._writer = this._port.writable.getWriter();
@@ -115,7 +135,19 @@ export class WebSerialTransport extends Transport {
     await settle(this._writer && this._writer.abort(), 1000);
     try { if (this._writer) this._writer.releaseLock(); } catch { /* already gone */ }
 
-    await settle(this._port && this._port.close(), 2000);
+    // Not swallowed like the rest. If this fails the port is still held by the
+    // page, the next connect will meet "already open", and an operator has no
+    // way to know why — so it is said out loud, and _open() knows to recover.
+    if (this._port) {
+      try {
+        await settle(this._port.close(), 2000, true);
+      } catch (err) {
+        this.emit('warning', {
+          message: 'The serial port did not close: ' + err.message +
+                   ' The next connect will close it before reopening.',
+        });
+      }
+    }
 
     this._reader   = null;
     this._writer   = null;
@@ -130,11 +162,12 @@ export class WebSerialTransport extends Transport {
  * Resolves when the promise settles either way, or when the deadline passes —
  * a step that never comes back must not hold up the rest of the cleanup.
  */
-function settle(promise, ms) {
+function settle(promise, ms, rethrow) {
   if (!promise || typeof promise.then !== 'function') return Promise.resolve();
   return Promise.race([
-    promise.then(() => {}, () => {}),
-    new Promise(resolve => setTimeout(resolve, ms)),
+    rethrow ? promise : promise.then(() => {}, () => {}),
+    new Promise((resolve, reject) => setTimeout(
+      rethrow ? () => reject(new Error('timed out after ' + ms + ' ms')) : resolve, ms)),
   ]);
 }
 
