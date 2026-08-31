@@ -485,9 +485,11 @@
         <h3>Does the marker replace the XML?</h3>
         <div class="step-body">
           <p>
-            REDCap keeps only the first part of a value that long, so what sat in
-            <code>seated_raw_xml_text</code> was a fragment of an XML document formatted
-            to look like a whole one. Once the file is stored, the field is replaced.
+            <code>seated_raw_xml_text</code> holds a marker, and never the XML. With file
+            storage on, the raw XML is not written to the field at all: REDCap keeps only
+            the first part of a value that long, and a fragment formatted to look like a
+            whole document is the worst thing to leave in a record — the readings it
+            describes are already in their own fields.
           </p>
           <pre>stored-as-file field=seated_raw_xml filename=1001_inst1_seated_aobp.xml
   bytes=125768 sha256=6820f666… at=2026-09-01T09:14:02.881Z</pre>
@@ -498,6 +500,11 @@
             <p>Download the file and check it:
               <code>certutil -hashfile 1001_inst1_seated_aobp.xml SHA256</code>.
               It should match the marker exactly — that is the point of the digest.</p>
+            <span class="chip bad">if it failed</span>
+            <p>The field says so instead, with the same length and digest:
+              <code class="mono">not-stored field=seated_raw_xml bytes=125768 sha256=…</code>
+              — so a record never reads as a measurement that produced no recording when
+              in fact one was lost.</p>
           </div>
         </div>
       </div>

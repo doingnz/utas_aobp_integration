@@ -620,9 +620,14 @@ console.log('\nthe recording is filed, not truncated');
   const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
   const visit = fs.readFileSync(new URL('harness-visit.html', import.meta.url), 'utf8');
 
-  check('the XML is written whole before any upload is attempted',
-    app.indexOf('setFieldValue(fields.xml, xml)') <
-    app.indexOf('async function saveXmlAsFile'));
+  // The field says one thing. With file storage on it holds a marker and never
+  // the XML: writing 125 kB in and overwriting it a moment later put a
+  // truncated fragment at risk of being saved, formatted to look like a whole
+  // document, describing readings that are already in their own fields.
+  check('the XML goes in the notes field only when there is nowhere better',
+    /if \(!\(window\.AOBP_CONFIG \|\| \{\}\)\.saveXmlAsFile\) \{/.test(app));
+  check('and a lost recording says so, with its length and digest',
+    /function markNotStored/.test(app) && /'not-stored'/.test(app));
   check('a stored recording leaves a marker with its length and digest',
     /stored-as-file/.test(app) && /sha256=/.test(app) && /bytes=/.test(app));
   check('and the digest is over bytes, not characters',

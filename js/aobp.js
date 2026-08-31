@@ -770,12 +770,20 @@
                        'Store it as a file instead (see README).');
         }
 
-        // Written whole, and replaced by a marker once the file is safely
-        // stored. This order is deliberate: if the upload fails, or files are
-        // not configured for this project, the field still holds whatever
-        // REDCap will keep of the XML. That is truncated and imperfect, and it
-        // is better than a record that mentions a file nobody saved.
-        setFieldValue(fields.xml, xml);
+        // Only where there is nowhere better to put it.
+        //
+        // With file storage on, this field is left for the marker: writing the
+        // XML first and overwriting it a moment later would put 125 kB through
+        // the DOM for nothing, and REDCap would keep the truncated fragment if
+        // the participant submitted in between. A fragment of an XML document
+        // formatted to look like a whole one is the worst thing to leave in a
+        // record, and the readings it describes are already in their own fields.
+        //
+        // With file storage off, this field is the only place the recording can
+        // go, truncation and all.
+        if (!(window.AOBP_CONFIG || {}).saveXmlAsFile) {
+          setFieldValue(fields.xml, xml);
+        }
       }
 
       var rhythm = measurement.rhythm;
@@ -873,13 +881,13 @@
       // the module prefix and the survey's token; a bare POST to the module has
       // neither. The framework publishes no global ajax helper — this page
       // called one for months, and nothing was ever there to answer it.
+      pendingXml[mode] = xml;
+
       var em = window.AOBP_MODULE;
       if (!em || typeof em.ajax !== 'function') {
         uploadFailed(mode, 'This page did not load the module AJAX object.');
         return;
       }
-
-      pendingXml[mode] = xml;
 
       try {
         var reply = await em.ajax('save-xml', { mode: mode, xml: xml });
@@ -918,6 +926,28 @@
         'stored-as-file' +
         ' field=' + (reply.field || '?') +
         ' filename=' + (reply.filename || '?') +
+        ' bytes=' + byteLength(xml) +
+        ' sha256=' + (digest || 'unavailable') +
+        ' at=' + new Date().toISOString());
+    }
+
+    /**
+     * Say in the record that the recording was not saved.
+     *
+     * The alternative is an empty field, which reads as a measurement that
+     * never produced a recording rather than one whose recording was lost. The
+     * length and digest are still worth writing: if the file turns up later —
+     * resent from this page, or recovered from the device — they identify it.
+     */
+    async function markNotStored(mode, xml) {
+      var fields = FIELD_NAMES[mode];
+      if (!fields.xml || !xml) return;
+
+      var digest = await sha256Hex(xml);
+
+      setFieldValue(fields.xml,
+        'not-stored' +
+        ' field=' + (mode === 'standing' ? 'standing_raw_xml' : 'seated_raw_xml') +
         ' bytes=' + byteLength(xml) +
         ' sha256=' + (digest || 'unavailable') +
         ' at=' + new Date().toISOString());
@@ -964,6 +994,7 @@
      */
     function uploadFailed(mode, why) {
       console.warn('[AOBP] the ' + mode + ' recording was not stored: ' + why);
+      markNotStored(mode, pendingXml[mode]);
       setStatus('error',
         'The ' + mode + ' measurement is saved, but its full recording did ' +
         'not reach the server. Press Resend recording. Do not close this page ' +

@@ -337,8 +337,8 @@ first instance whatever visit it came from.
 from `aobp_integration_v1.0.1`, and it would have failed with *undefined method*
 the first time it ran.
 
-**What the text field then holds.** The XML is written whole first, and replaced
-by a marker once the file is confirmed stored:
+**What the text field then holds.** A marker, and never the XML — the raw XML is
+not written to the field at all while file storage is on:
 
 ```
 stored-as-file field=seated_raw_xml filename=1001_inst1_seated_aobp.xml
@@ -346,10 +346,17 @@ stored-as-file field=seated_raw_xml filename=1001_inst1_seated_aobp.xml
 ```
 
 The digest is over the bytes that were sent, so the file on the record can be
-checked against what the device produced rather than taken on trust. If the
-upload fails, or files are not configured, the field keeps whatever REDCap will
-hold of the XML — truncated and imperfect, and better than a record pointing at
-a file nobody saved.
+checked against what the device produced rather than taken on trust.
+
+If the upload fails the field says that instead, with the same length and digest:
+
+```
+not-stored field=seated_raw_xml bytes=125768 sha256=b920b403… at=…
+```
+
+so a record never reads as a measurement that produced no recording when in fact
+one was lost. With file storage **off**, the field falls back to holding the XML
+itself, truncation and all, because then there is nowhere else for it to go.
 
 **When it fails.** The measurement itself is safe: the numbers are in their
 fields before the upload is attempted. The recording is not — it exists nowhere
