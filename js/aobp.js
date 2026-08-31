@@ -641,18 +641,40 @@
       var el = blocks[mode || currentMode].alerts;
       if (!el) return;
 
-      var list = alerts || [];
+      var every = alerts || [];
 
-      // A measurement that succeeded has already said so. Whether it also
-      // reports what it recovered from on the way is a study's choice: it is a
-      // real signal — a participant who needs two attempts every visit, a cuff
-      // failing intermittently — and it is also a warning over a good reading,
-      // which invites a repeat nobody needs. On either setting it is still
-      // written to the record; this only decides what the operator sees.
-      var cfg = window.AOBP_CONFIG || {};
-      if (succeeded && cfg.detailedWarnings === false) {
-        list = list.filter(function (alert) { return alert.severity === 'good'; });
+      // Every alert is logged, whatever is shown. The console and the record
+      // keep the device's full account; this decides only what the operator is
+      // asked to react to.
+      for (var j = 0; j < every.length; j++) {
+        var each = every[j];
+        console.warn('[AOBP] device alert (' + each.severity + ')' +
+                     (each.readings.length ? ' BP' + each.readings.join('/') : '') +
+                     ': ' + each.message +
+                     ' [' + (each.tm2917_hex_result || 'no hex') + ']');
       }
+
+      // No finish code, no problem to report.
+      //
+      // The TM2917 retries a determination it could not measure, up to three
+      // times, and says so afterwards even when a later attempt succeeded. So a
+      // measurement that came back clean still carried "Unable to measure BP:
+      // Please Repeat (C13)" from the attempt that was thrown away — shown in
+      // red, over a good reading, with nothing for the operator to do about it.
+      // Motion artefact during one attempt is the ordinary way to meet this.
+      //
+      // What matters clinically is whether the device finished: an `F nn`
+      // finish code means no reading, and that is reported. Recovered attempts
+      // are a real signal — a participant who needs three goes every visit is
+      // worth knowing about — but reporting them as errors trains the operator
+      // to ignore the panel, which is worse than not showing them. They wait
+      // for a motion flag to be reported properly.
+      //
+      // Set AOBP_CONFIG.detailedWarnings = true to see them anyway.
+      var cfg = window.AOBP_CONFIG || {};
+      var list = (succeeded && cfg.detailedWarnings !== true)
+        ? every.filter(function (alert) { return alert.severity === 'good'; })
+        : every;
       if (!list.length && !(quality && quality.known)) {
         el.style.display = 'none';
         el.innerText = '';
@@ -675,11 +697,6 @@
             ? 'BP' + alert.readings.join(' and BP') + ': ' + alert.message
             : alert.message);
         }
-
-        console.warn('[AOBP] device alert (' + alert.severity + ')' +
-                     (alert.readings.length ? ' BP' + alert.readings.join('/') : '') +
-                     ': ' + alert.message +
-                     ' [' + (alert.tm2917_hex_result || 'no hex') + ']');
       }
 
       var summary;

@@ -312,6 +312,26 @@ console.log('\nrecovered retries');
   check('without a bpRange nothing is assumed recovered',
     alertsOf({ readings: [{ sys: 122, dia: 78, pr: 70, alert: fault }] }, null)[0]
       ?.severity === 'caution');
+
+  // What the operator sees, as opposed to what the record keeps. The TM2917
+  // retries a determination it could not measure and still reports the attempt
+  // it threw away, so a measurement that finished cleanly carried "Unable to
+  // measure BP: Please Repeat (C13)" in red over a good reading. There is no
+  // finish code, nothing went wrong, and nothing for the operator to do.
+  const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+
+  check('a measurement with no F nn shows only its quality line',
+    /succeeded && cfg\.detailedWarnings !== true/.test(app));
+  check('and the detail can still be turned back on',
+    app.includes('detailedWarnings'));
+
+  // The filter decides what is displayed, never what is recorded: every alert
+  // still reaches the console, or the evidence for a device fault disappears
+  // with the warning that would have prompted someone to look.
+  const logAt    = app.indexOf('[AOBP] device alert (');
+  const filterAt = app.indexOf('cfg.detailedWarnings !== true');
+  check('every alert is still logged, whatever is shown',
+    logAt > 0 && logAt < filterAt);
 }
 
 // ── A failed open must not keep the port ─────────────────────────────────────
