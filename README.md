@@ -367,8 +367,12 @@ by default — which is what a compact archive of a format still in development
 needs.
 
 Gone: `<RawPressureWave>` and `<NibpDetailedData>` from each determination, and
-inside `<Result>` the five bulk arrays — `sBaseLined`, `cEstimate`, `baEstimate`
-and the two `*PulsePointsIndexes` that index into them.
+inside `<Result>` the bulk arrays — `sBaseLined`, `cEstimate`, `baEstimate`, the
+two `*PulsePointsIndexes` that index into them, and `infraDiastolicFiltered` with
+`infraDiastolicBeatStartIdxs`. The last two are listed for a firmware that does
+not exist yet: nothing records the infradiastolic wave while AOBP is enabled, so
+no file has them, and naming them now means a reduced file will not quietly grow
+by another full rhythm strip the day one does.
 
 Kept: `sAveragePulse` and `cAveragePulse` — arrays, but the *averaged* pulse
 rather than a recording, and the shape every derived value was computed from, at
@@ -378,12 +382,6 @@ and all 37 derived values in `<Result>` — SNR, sPRV, cSys, cDia, cAIx, cSEVR a
 the rest — with `version` and `algorithm_revision` on the element. That last pair
 matters: they record *which* algorithm produced the values, and a later
 recomputation would use a later revision with nothing to say the two differ.
-
-Also kept, deliberately, though both are arrays: `infraDiastolicFiltered` and
-`infraDiastolicBeatStartIdxs`, the pulse pressure wave recorded below diastolic
-and its pulse starts. Firmware does not record them while AOBP is enabled, so no
-file has them yet; when they appear they must survive, and the SDK has a test
-that says so.
 
 Measured on a real standing AOBP: **105,388 bytes becomes 17,138**, comfortably
 inside a text field.

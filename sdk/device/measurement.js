@@ -701,7 +701,7 @@ const DROPPED_ANYWHERE = ['RawPressureWave', 'NibpDetailedData'];
 /**
  * The bulk arrays inside `Result`, and the index arrays that point into them.
  *
- * `Result` is 47 kB, of which 42.9 kB is these five and 1.2 kB is the 37 values
+ * `Result` is 47 kB, of which 42.9 kB is these arrays and 1.2 kB is the 37 values
  * that matter: SNR, sPR, sPRV, sAI, cSys, cDia, cAIx, cSEVR and the rest of the
  * derived central result. Keeping all 37 costs 1,180 bytes more than keeping SNR
  * alone, so they all stay — along with `version` and `algorithm_revision` on the
@@ -717,12 +717,13 @@ const DROPPED_ANYWHERE = ['RawPressureWave', 'NibpDetailedData'];
  * derived value was computed from, which is the one waveform worth carrying at
  * that price.
  *
- * NOT on this list, deliberately, though both are arrays:
  * `infraDiastolicFiltered` and `infraDiastolicBeatStartIdxs` — the pulse
- * pressure wave recorded below diastolic, and its pulse starts. Firmware does
- * not record them while AOBP is enabled, so no file has them yet. They are the
- * calculated result of a recording that has no substitute, and when they do
- * appear they must survive. Do not add them here.
+ * pressure wave recorded below diastolic, and its pulse starts — are on the
+ * list although no file in hand contains them: firmware does not record them
+ * while AOBP is enabled. They are listed now so that the day it does, a reduced
+ * file does not quietly grow by the size of another full rhythm strip. A name
+ * the document does not contain costs nothing, which is what the test below
+ * checks.
  */
 const DROPPED_FROM_RESULT = [
   'sBaseLined',
@@ -730,6 +731,8 @@ const DROPPED_FROM_RESULT = [
   'baEstimate',
   'sBaseLinedPulsePointsIndexes',
   'cEstimatePulsePointsIndexes',
+  'infraDiastolicFiltered',
+  'infraDiastolicBeatStartIdxs',
 ];
 
 /**

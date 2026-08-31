@@ -613,12 +613,13 @@ console.log('\nthe XML reduces to what cannot be recomputed');
   check('and the algorithm that produced them is named',
     small.includes('algorithm_revision="1.0.1.0"') && small.includes('version="5.0"'));
 
-  // Arrays, and kept anyway: the pulse pressure wave recorded below diastolic
-  // has no substitute in the file. Firmware does not record it while AOBP is on,
-  // so nothing in hand contains it — which is exactly why it needs a test.
-  check('the infradiastolic result survives, though it is an array',
-    small.includes('<infraDiastolicFiltered>') &&
-    small.includes('<infraDiastolicBeatStartIdxs>'));
+  // Listed for a firmware that does not exist yet: nothing records the
+  // infradiastolic wave while AOBP is enabled, so no file in hand contains it.
+  // Named now so that the day one does, a reduced file does not quietly grow by
+  // another full rhythm strip.
+  check('the infradiastolic arrays go, like every other waveform',
+    !small.includes('<infraDiastolicFiltered>') &&
+    !small.includes('<infraDiastolicBeatStartIdxs>'));
 
   check('it is a fraction of the size', small.length < xml.length / 4,
     small.length + ' of ' + xml.length);
