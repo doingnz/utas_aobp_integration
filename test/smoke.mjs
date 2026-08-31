@@ -325,6 +325,19 @@ console.log('\nrecovered retries');
   check('and the detail can still be turned back on',
     app.includes('detailedWarnings'));
 
+  // The default has to hold everywhere it is set, not just in the module. Both
+  // harnesses and the REDCap module were passing detailedWarnings: true, so the
+  // module's own default never applied and the warnings kept appearing.
+  const php  = fs.readFileSync(new URL('../AobpIntegration.php', import.meta.url), 'utf8');
+  const one  = fs.readFileSync(new URL('harness.html', import.meta.url), 'utf8');
+  const two  = fs.readFileSync(new URL('harness-visit.html', import.meta.url), 'utf8');
+
+  check('nothing turns detailed warnings on behind the operator',
+    !php.includes("? false : true") &&
+    /aobp-show-recovered-warnings/.test(php) &&
+    !one.includes('detailedWarnings: true') &&
+    !two.includes('detailedWarnings: true'));
+
   // The filter decides what is displayed, never what is recorded: every alert
   // still reaches the console, or the evidence for a device fault disappears
   // with the warning that would have prompted someone to look.
@@ -484,6 +497,47 @@ console.log('\na cancel says who asked for it');
     /ErrorReason\.cancelledByHost/.test(src));
   check('the page words it by who did it',
     /cancelledByHost/.test(app) && /stopped at the BP\+/.test(app));
+}
+
+// Driven, not read. The source check above passed while the behaviour was
+// wrong: a cancel during the countdown produces F 02 with no result block, so
+// the session rejects the request itself and never reaches the branch that was
+// carrying the tag. Only running one shows that.
+{
+  const { ErrorReason } = await import('../sdk/core/errors.js');
+
+  const device = new BpPlusDevice(new SimulatorTransport({ tickMs: 5 }));
+  await device.connect();
+
+  const measuring = device.measure({ patientId: 'CANCEL-1' });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  await device.cancel();
+
+  let hostCancel = null;
+  try { await measuring; } catch (error) { hostCancel = error; }
+
+  check('a cancel the host sent is tagged as the host asking',
+    hostCancel?.code === ResultCode.cancelled &&
+    hostCancel?.reason === ErrorReason.cancelledByHost,
+    JSON.stringify({ code: hostCancel?.code, reason: hostCancel?.reason }));
+
+  // The device's own stop must NOT be tagged, or the wording is wrong the
+  // other way round.
+  const second = new BpPlusDevice(new SimulatorTransport({ tickMs: 5 }));
+  await second.connect();
+  const running = second.measure({ patientId: 'CANCEL-2' });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  // The same bytes device.cancel() would send, without going through it — this
+  // is the operator reaching for the button, not the host asking.
+  await second._session.sendImmediate('c' + String.fromCharCode(13, 10));
+
+  let deviceCancel = null;
+  try { await running; } catch (error) { deviceCancel = error; }
+
+  check('a stop that the host did not ask for is not tagged',
+    deviceCancel?.code === ResultCode.cancelled &&
+    deviceCancel?.reason === undefined,
+    JSON.stringify({ code: deviceCancel?.code, reason: deviceCancel?.reason }));
 }
 
 // -- The SDK classifies, and says what to do -------------------------------

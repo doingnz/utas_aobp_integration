@@ -435,9 +435,6 @@ export class BpPlusDevice extends Emitter {
         throw new BpPlusError(failure.code, {
           command: line,
           alerts: alertsOf(result),
-          reason: failure.code === ResultCode.cancelled && this._cancelRequested
-            ? ErrorReason.cancelledByHost
-            : undefined,
         });
       }
 
@@ -458,6 +455,17 @@ export class BpPlusDevice extends Emitter {
       }
 
       return result;
+    } catch (error) {
+      // Tagged here because there is more than one way for a cancel to arrive.
+      // A cancel during the countdown produces `F 02` with no result block at
+      // all, so the session rejects the request itself and never reaches the
+      // branch above — which is why tagging it there told an operator who had
+      // just pressed Cancel that the BP+ had been stopped by hand. One place,
+      // on the way out, catches every path.
+      if (error && error.code === ResultCode.cancelled && this._cancelRequested) {
+        error.reason = ErrorReason.cancelledByHost;
+      }
+      throw error;
     } finally {
       outcome.cancel();
       this._setState(this.isConnected ? DeviceState.connected : DeviceState.disconnected);

@@ -190,9 +190,13 @@ class AobpIntegration extends AbstractExternalModule
             'trace'           => (bool) $this->getProjectSetting('aobp-trace'),
             'autoAdvanceStanding' => (bool) $this->getProjectSetting('aobp-auto-advance-standing'),
             'autoAdvanceSeconds'  => $this->autoAdvanceSeconds(),
-            // Default on: a warning shown needlessly is recoverable, one
-            // withheld is not.
-            'detailedWarnings' => $this->getProjectSetting('aobp-hide-recovered-warnings') ? false : true,
+            // Default OFF. The TM2917 retries a determination it could not
+            // measure and reports the attempt it discarded even when a later
+            // one succeeded, so this fires over good readings with nothing for
+            // the operator to do. A warning nobody can act on teaches people to
+            // ignore the panel, and the panel is the only thing watching while
+            // nobody is in the room. Recorded either way; this is display only.
+            'detailedWarnings' => (bool) $this->getProjectSetting('aobp-show-recovered-warnings'),
         ];
 
         // json_encode with the HEX_* flags escapes everything that could close

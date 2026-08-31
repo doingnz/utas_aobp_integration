@@ -41,8 +41,8 @@
       "required": false
     },
     {
-      "key": "aobp-hide-recovered-warnings",
-      "name": "Hide warnings on measurements that succeeded (the device retried and recovered). They are recorded either way",
+      "key": "aobp-show-recovered-warnings",
+      "name": "Show warnings on measurements that succeeded (the device retried and recovered). Off by default: they are recorded either way, and there is nothing for clinic staff to act on",
       "type": "checkbox"
     },
     {
