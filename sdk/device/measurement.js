@@ -701,7 +701,7 @@ const DROPPED_ANYWHERE = ['RawPressureWave', 'NibpDetailedData'];
 /**
  * The bulk arrays inside `Result`, and the index arrays that point into them.
  *
- * `Result` is 47 kB, of which 45.6 kB is these seven and 1.2 kB is the 37 values
+ * `Result` is 47 kB, of which 42.9 kB is these five and 1.2 kB is the 37 values
  * that matter: SNR, sPR, sPRV, sAI, cSys, cDia, cAIx, cSEVR and the rest of the
  * derived central result. Keeping all 37 costs 1,180 bytes more than keeping SNR
  * alone, so they all stay — along with `version` and `algorithm_revision` on the
@@ -712,6 +712,11 @@ const DROPPED_ANYWHERE = ['RawPressureWave', 'NibpDetailedData'];
  * The two `*PulsePointsIndexes` go with the waveforms they index into. An index
  * without its array is a set of offsets into nothing.
  *
+ * `sAveragePulse` and `cAveragePulse` are kept. They are arrays, but they are
+ * the averaged pulse rather than a full recording — 2.7 kB for the shape every
+ * derived value was computed from, which is the one waveform worth carrying at
+ * that price.
+ *
  * NOT on this list, deliberately, though both are arrays:
  * `infraDiastolicFiltered` and `infraDiastolicBeatStartIdxs` — the pulse
  * pressure wave recorded below diastolic, and its pulse starts. Firmware does
@@ -721,8 +726,6 @@ const DROPPED_ANYWHERE = ['RawPressureWave', 'NibpDetailedData'];
  */
 const DROPPED_FROM_RESULT = [
   'sBaseLined',
-  'sAveragePulse',
-  'cAveragePulse',
   'cEstimate',
   'baEstimate',
   'sBaseLinedPulsePointsIndexes',

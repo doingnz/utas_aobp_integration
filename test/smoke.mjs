@@ -574,6 +574,8 @@ console.log('\nthe XML reduces to what cannot be recomputed');
     '<SNR>28</SNR><sPRV>6</sPRV><cSys>116</cSys><cAIx>24</cAIx>' +
     '<infraDiastolicFiltered>0.1,0.2,0.3</infraDiastolicFiltered>' +
     '<infraDiastolicBeatStartIdxs>0,150,300</infraDiastolicBeatStartIdxs>' +
+    '<sAveragePulse>0.1,0.2</sAveragePulse>' +
+    '<cAveragePulse>89.9,89.7</cAveragePulse>' +
     '<sBaseLined>' + '1.0,'.repeat(1000) + '</sBaseLined>' +
     '<cEstimate>' + '2.0,'.repeat(1000) + '</cEstimate>' +
     '<baEstimate>' + '3.0,'.repeat(1000) + '</baEstimate>' +
@@ -590,6 +592,17 @@ console.log('\nthe XML reduces to what cannot be recomputed');
     small.includes('<Sys>126</Sys>') && small.includes('<Sys>130</Sys>'));
   check('the suprasystolic recording survives, since nothing else rebuilds it',
     small.includes('RawSuprasystolicPressure') && small.includes('RawCuffPPressure'));
+
+  // Arrays, and kept: the averaged pulse rather than a full recording, and the
+  // shape every derived value was computed from. 2.7 kB on a real file.
+  check('the average pulses are kept, unlike the recordings',
+    small.includes('<sAveragePulse>') && small.includes('<cAveragePulse>'));
+
+  // A name on the drop list that the document does not contain costs nothing:
+  // getElementsByTagName returns an empty collection and the loop does not run.
+  check('a drop list naming absent elements is harmless',
+    minimalXml('<BPplus><MeasDataLogger><Sys>1</Sys></MeasDataLogger></BPplus>')
+      .includes('<Sys>1</Sys>'));
 
   // 47 kB of Result is seven arrays; 1.2 kB is the 37 values worth having.
   check('every derived value survives, not only SNR',

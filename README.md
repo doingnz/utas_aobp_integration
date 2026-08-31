@@ -367,11 +367,12 @@ by default — which is what a compact archive of a format still in development
 needs.
 
 Gone: `<RawPressureWave>` and `<NibpDetailedData>` from each determination, and
-inside `<Result>` the seven bulk arrays (`sBaseLined`, `sAveragePulse`,
-`cAveragePulse`, `cEstimate`, `baEstimate` and the two `*PulsePointsIndexes`
-that index into them).
+inside `<Result>` the five bulk arrays — `sBaseLined`, `cEstimate`, `baEstimate`
+and the two `*PulsePointsIndexes` that index into them.
 
-Kept: `MeasDataLogger` entire, including the suprasystolic and cuff recordings;
+Kept: `sAveragePulse` and `cAveragePulse` — arrays, but the *averaged* pulse
+rather than a recording, and the shape every derived value was computed from, at
+2.7 kB; `MeasDataLogger` entire, including the suprasystolic and cuff recordings;
 every determination's Sys/Dia/Map/Pr with its timestamp, alert and motion flag;
 and all 37 derived values in `<Result>` — SNR, sPRV, cSys, cDia, cAIx, cSEVR and
 the rest — with `version` and `algorithm_revision` on the element. That last pair
@@ -384,7 +385,7 @@ and its pulse starts. Firmware does not record them while AOBP is enabled, so no
 file has them yet; when they appear they must survive, and the SDK has a test
 that says so.
 
-Measured on a real standing AOBP: **105,388 bytes becomes 14,432**, comfortably
+Measured on a real standing AOBP: **105,388 bytes becomes 17,138**, comfortably
 inside a text field.
 
 **When it fails.** The measurement itself is safe: the numbers are in their
