@@ -1,2 +1,6 @@
 node_modules/
 package-lock.json
+
+# Built for handover; rebuilt from the tree, not edited in place
+dist/utas_aobp_integration_v1.0.0/
+dist/*.zip

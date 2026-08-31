@@ -113,7 +113,7 @@ BP+** differs — a port list on desktop, a USB device list on a tablet.
 | Instrument that carries the AOBP controls | `aobp_visit` | Where the buttons live |
 | Instrument that uses the collapsible information panels | `info` | Optional, for `js/info.js` |
 | Set the device clock when it is out by more than *n* minutes | 5 | See **The device clock** |
-| Hide warnings on measurements that succeeded | off | The device retries and recovers; see below |
+| Show warnings on measurements that succeeded | off | The device retries and recovers; see below |
 | Store the raw measurement XML as a file | off | See **The raw XML** |
 | Log every serial line to the browser console | off | Troubleshooting only |
 
@@ -296,9 +296,9 @@ seated_raw_xml_text    ≈ 125,000 characters
 standing_raw_xml_text  ≈ 103,000 characters
 ```
 
-That is more than a REDCap **text field** holds. The module writes the field and
-logs a console warning past 60,000 characters, but the place to keep the XML is a
-file:
+REDCap keeps only the first part of a value that long, so a text field holds a
+fragment of an XML document formatted to look like a whole one — which reads as
+data. The place to keep the XML is a file:
 
 1. Add file-upload fields named `seated_raw_xml` and `standing_raw_xml`.
 2. Tick **Store the raw measurement XML as a file on the record**.
@@ -307,10 +307,35 @@ The page then calls the module's `save-xml` AJAX action after each measurement,
 and the file lands on the record through `\REDCap::saveFile()`. The External
 Modules framework authenticates that call and scopes it to the calling project.
 
-This path needs a REDCap instance to exercise. Confirm on your installation
-whether the `save-xml` action must be declared for use from a survey page, where
-the respondent is not a logged-in user. The measurement itself does not depend on
-it: a failure is logged, and the numeric fields are already filled by then.
+**What the text field then holds.** The XML is written whole first, and replaced
+by a marker once the file is confirmed stored:
+
+```
+stored-as-file field=seated_raw_xml filename=1001_inst1_seated_aobp.xml
+  bytes=125768 sha256=6820f666… at=2026-08-31T23:59:01.123Z
+```
+
+The digest is over the bytes that were sent, so the file on the record can be
+checked against what the device produced rather than taken on trust. If the
+upload fails, or files are not configured, the field keeps whatever REDCap will
+hold of the XML — truncated and imperfect, and better than a record pointing at
+a file nobody saved.
+
+**When it fails.** The measurement itself is safe: the numbers are in their
+fields before the upload is attempted. The recording is not — it exists nowhere
+but the browser tab until it is uploaded, and dies with the page. So a failure
+is not a console warning: the operator is told, and a **Resend recording** button
+appears, which retries without asking the participant to sit through another
+measurement.
+
+This path needs a REDCap instance to exercise. Two things to confirm on your
+installation:
+
+- whether the `save-xml` action must be declared for use from a survey page,
+  where the respondent is not a logged-in user — the framework's
+  `no-auth-ajax-actions` list in `config.json` is the usual answer;
+- whether `$record` and `$repeat_instance` are populated mid-survey, since a
+  file cannot attach to a record that does not exist yet.
 
 ---
 

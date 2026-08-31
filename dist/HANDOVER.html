@@ -1,0 +1,671 @@
+<title>AOBP Dev-Server Handover</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+  :root {
+    --ground:      #f6f8f8;
+    --panel:       #ffffff;
+    --panel-sunk:  #eef3f2;
+    --ink:         #16211f;
+    --ink-muted:   #5b6b69;
+    --rule:        #dbe4e3;
+    --accent:      #0e6b66;
+    --accent-soft: #e2efee;
+
+    /* The module's own status palette, so this page and the software agree. */
+    --ok-ink: #2d6a4f;  --ok-bg: #d8f3dc;  --ok-line: #b7e4c7;
+    --warn-ink: #8a6100; --warn-bg: #fff8e1; --warn-line: #ffe082;
+    --bad-ink: #b71c1c;  --bad-bg: #fdecea;  --bad-line: #f5c2c0;
+
+    --measure: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0f1615;
+      --panel:       #161f1e;
+      --panel-sunk:  #1c2726;
+      --ink:         #e4ebe9;
+      --ink-muted:   #93a4a1;
+      --rule:        #2a3736;
+      --accent:      #5cbdb5;
+      --accent-soft: #17302e;
+
+      --ok-ink: #8fd9ab;  --ok-bg: #14291f;  --ok-line: #245038;
+      --warn-ink: #f0c471; --warn-bg: #2b2113; --warn-line: #5c451c;
+      --bad-ink: #f3a29d;  --bad-bg: #2d1614;  --bad-line: #5e2a26;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #0f1615;
+    --panel:       #161f1e;
+    --panel-sunk:  #1c2726;
+    --ink:         #e4ebe9;
+    --ink-muted:   #93a4a1;
+    --rule:        #2a3736;
+    --accent:      #5cbdb5;
+    --accent-soft: #17302e;
+
+    --ok-ink: #8fd9ab;  --ok-bg: #14291f;  --ok-line: #245038;
+    --warn-ink: #f0c471; --warn-bg: #2b2113; --warn-line: #5c451c;
+    --bad-ink: #f3a29d;  --bad-bg: #2d1614;  --bad-line: #5e2a26;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 82ch;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  h1, h2, h3, .eyebrow, .chip, th, .stepnum, .filename {
+    font-family: "IBM Plex Sans Condensed", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  .eyebrow {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  h1 {
+    font-size: clamp(30px, 5vw, 42px);
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 10px 0 0;
+  }
+
+  .standfirst {
+    max-width: var(--measure);
+    font-size: 18px;
+    color: var(--ink-muted);
+    margin: 14px 0 0;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px;
+    color: var(--ink-muted);
+  }
+
+  section { display: flex; flex-direction: column; gap: 16px; }
+
+  h2 {
+    font-size: 25px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  p, li { max-width: var(--measure); margin: 0; }
+  ul, ol { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 8px; }
+
+  code, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.87em;
+  }
+  p code, li code, td code, .step-body code {
+    background: var(--panel-sunk);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+
+  pre {
+    background: var(--panel-sunk);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 0;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .files { display: flex; flex-direction: column; gap: 14px; }
+  .file {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 16px;
+    align-items: baseline;
+  }
+  .filename {
+    grid-column: 1 / -1;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--accent);
+    word-break: break-all;
+  }
+  .file p { grid-column: 1 / -1; color: var(--ink-muted); font-size: 15px; }
+
+  .table-wrap { overflow-x: auto; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-family: "IBM Plex Sans Condensed", Arial, sans-serif;
+    font-size: 14.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 12.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    border-bottom: 1px solid var(--ink);
+    padding: 0 14px 8px 0;
+    white-space: nowrap;
+  }
+  td {
+    padding: 9px 14px 9px 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  td:last-child, th:last-child { padding-right: 0; }
+
+  /* Steps are numbered because the order is load-bearing: step 1 can
+     invalidate everything after it. */
+  .steps { display: flex; flex-direction: column; gap: 22px; counter-reset: step; }
+  .step {
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    gap: 4px 18px;
+    padding-top: 20px;
+    border-top: 1px solid var(--rule);
+  }
+  .step:first-child { border-top: none; padding-top: 0; }
+  .stepnum {
+    grid-row: 1 / 3;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .step-body { display: flex; flex-direction: column; gap: 10px; }
+
+  .chip {
+    display: inline-block;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .chip.ok   { color: var(--ok-ink);   background: var(--ok-bg);   border-color: var(--ok-line); }
+  .chip.warn { color: var(--warn-ink); background: var(--warn-bg); border-color: var(--warn-line); }
+  .chip.bad  { color: var(--bad-ink);  background: var(--bad-bg);  border-color: var(--bad-line); }
+
+  .outcome {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 12px;
+    align-items: start;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 12px 16px;
+    font-size: 15px;
+  }
+  .outcome p { margin: 0; }
+
+  .flag {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-line);
+    border-radius: 6px;
+    padding: 16px 18px;
+    color: var(--warn-ink);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .flag strong { font-family: "IBM Plex Sans Condensed", Arial, sans-serif; }
+  .flag code { background: rgba(0,0,0,0.06); }
+
+  .q { display: flex; flex-direction: column; gap: 6px; padding: 16px 0; border-bottom: 1px solid var(--rule); }
+  .q:last-child { border-bottom: none; }
+  .q p { color: var(--ink-muted); font-size: 15.5px; }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 20px;
+    color: var(--ink-muted);
+    font-size: 14.5px;
+  }
+
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 620px) {
+    .sheet { padding: 36px 18px 72px; }
+    .step { grid-template-columns: 30px 1fr; gap: 4px 12px; }
+    .stepnum { font-size: 21px; }
+  }
+</style>
+
+<div class="sheet">
+
+  <header>
+    <div class="eyebrow">Uscom BP+ · University of Tasmania</div>
+    <h1>AOBP Dev-Server Handover</h1>
+    <p class="standfirst">
+      Everything needed to install the module on the REDCap development server and
+      work through the tests that only a real REDCap can answer. Two of them can
+      invalidate the rest, so they come first.
+    </p>
+    <div class="meta">
+      <span>1 September 2026</span>
+      <span>module v1.0.0</span>
+      <span>harness build 1.7.21</span>
+      <span>framework v15</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>What you're getting</h2>
+    <div class="panel files">
+      <div class="file">
+        <span class="filename">utas_aobp_integration_v1.0.0.zip</span>
+        <p>
+          The external module — 29 files, 169 kB. Contains <code>AobpIntegration.php</code>,
+          <code>config.json</code>, <code>js/</code> (the survey-page controller) and
+          <code>sdk/</code> (the BP+ JavaScript SDK, 24 modules). The README inside covers
+          the instrument contract, the device clock, transports and the raw XML in full.
+        </p>
+      </div>
+      <div class="file">
+        <span class="filename">AOBPDEV_DataDictionary_2026-08-31_extended.csv</span>
+        <p>
+          Your 31 August dictionary with the changes listed below — 155 fields, no
+          duplicate IDs. Your original file is untouched on our side.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Install</h2>
+    <ol>
+      <li>Unzip into REDCap's <code>modules/</code> directory. Keep the folder name
+        <code>utas_aobp_integration_v1.0.0</code> — REDCap reads the version from it.</li>
+      <li>Enable the module on the project.</li>
+      <li>Set the project settings below.</li>
+    </ol>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Setting</th><th>For tomorrow</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Instrument that carries the AOBP controls</td>
+            <td><code>aobp_visit</code></td>
+            <td>Default; set it only if the instrument is named differently</td>
+          </tr>
+          <tr>
+            <td>Store the raw measurement XML as a file</td>
+            <td><strong>on</strong></td>
+            <td>The whole point of steps 3–5</td>
+          </tr>
+          <tr>
+            <td>Log every serial line to the browser console</td>
+            <td><strong>on</strong></td>
+            <td>Troubleshooting only — turn it off afterwards</td>
+          </tr>
+          <tr>
+            <td>Show warnings on measurements that succeeded</td>
+            <td>off</td>
+            <td>Default. The device retries and recovers on its own; those warnings
+                fire over good readings with nothing to act on</td>
+          </tr>
+          <tr>
+            <td>Start the standing measurement automatically</td>
+            <td>off</td>
+            <td>Default. The operator presses Start when the participant is ready</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Import the dictionary</h2>
+    <p>
+      Six of your fields changed content and three were renamed. The renames are
+      descriptive fields only — no data is stored in them — but check nothing else
+      in the project references the old names before importing.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Change</th><th>Fields</th><th>Reason</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Element IDs suffixed</td>
+            <td class="mono">connect-bp-btn → connect-bp-btn-seated / -standing<br>
+                status-display → status-display-seated / -standing</td>
+            <td>Both blocks are on one page with the same IDs, so
+                <code>getElementById</code> returned the seated controls for both and the
+                standing block never responded</td>
+          </tr>
+          <tr>
+            <td>Renamed</td>
+            <td class="mono">aobp_instruct_seat1 → aobp_instruct_seated_only<br>
+                aobp_instruct_seat2 → aobp_instruct_seated_then_standing<br>
+                aobp_instruct_stand → aobp_instruct_standing</td>
+            <td>seat1/seat2 gave no clue which was which; the pair differ by one
+                sentence, the one warning the patient that standing follows</td>
+          </tr>
+          <tr>
+            <td>Removed</td>
+            <td class="mono">repeat_btn, repeat_btn_standing</td>
+            <td>Repeat Measurement ran the identical call as Start. Start now renames
+                itself to <strong>Repeat Seated BP</strong> once that position has a
+                reading — one control per position, saying what pressing it will do</td>
+          </tr>
+          <tr>
+            <td>Added</td>
+            <td class="mono">seated_cancel_btn, standing_cancel_btn<br>
+                ui_alerts_seated, ui_alerts_standing<br>
+                ui_visit_state_seated, ui_visit_state_standing</td>
+            <td>Cancel while a measurement is running; the device's own account of a
+                measurement; and what the visit still needs</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>
+      One observation, unchanged from your file: <code>seated_unfinished</code> and
+      <code>standing_unfinished</code> have empty field labels. If REDCap rejects the
+      import, that is the first place to look.
+    </p>
+  </section>
+
+  <section>
+    <h2>The tests</h2>
+    <p>
+      In this order. Steps 1 and 2 are the ones no amount of testing here can settle,
+      and either can invalidate what follows.
+    </p>
+
+    <div class="steps">
+
+      <div class="step">
+        <div class="stepnum">1</div>
+        <h3>Does <code>save-xml</code> survive a survey page?</h3>
+        <div class="step-body">
+          <p>
+            Open the instrument <strong>as a survey</strong>, not as a data-entry form,
+            and take one seated measurement with the BP+ connected.
+          </p>
+          <div class="outcome">
+            <span class="chip ok">expect</span>
+            <p>A file appears on <code>seated_raw_xml</code>, roughly 125 kB.</p>
+            <span class="chip bad">if not</span>
+            <p>The browser console carries the reason. The likely one is that the AJAX
+              action must be declared for a context where the respondent is not a
+              logged-in user — see below.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="stepnum">2</div>
+        <h3>Is the file on the right record and instance?</h3>
+        <div class="step-body">
+          <p>
+            <code>aobp_visit</code> is a repeating instrument. The module hands REDCap
+            whatever <code>redcap_module_ajax</code> supplies for
+            <code>$record</code>, <code>$event_id</code> and <code>$repeat_instance</code>,
+            and a file cannot attach to a record that does not exist yet.
+          </p>
+          <div class="outcome">
+            <span class="chip ok">expect</span>
+            <p>The filename says so: <code class="mono">1001_inst2_seated_aobp.xml</code>
+              on instance 2, attached to instance 2.</p>
+            <span class="chip bad">if not</span>
+            <p>Note which is wrong — record, event or instance. Each has a different fix.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="stepnum">3</div>
+        <h3>Does the marker replace the XML?</h3>
+        <div class="step-body">
+          <p>
+            REDCap keeps only the first part of a value that long, so what sat in
+            <code>seated_raw_xml_text</code> was a fragment of an XML document formatted
+            to look like a whole one. Once the file is stored, the field is replaced.
+          </p>
+          <pre>stored-as-file field=seated_raw_xml filename=1001_inst1_seated_aobp.xml
+  bytes=125768 sha256=6820f666… at=2026-09-01T09:14:02.881Z</pre>
+          <div class="outcome">
+            <span class="chip ok">expect</span>
+            <p>That line, and nothing else, in the text field.</p>
+            <span class="chip warn">then</span>
+            <p>Download the file and check it:
+              <code>certutil -hashfile 1001_inst1_seated_aobp.xml SHA256</code>.
+              It should match the marker exactly — that is the point of the digest.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="stepnum">4</div>
+        <h3>What happens when the upload fails?</h3>
+        <div class="step-body">
+          <p>
+            Take a measurement with the network briefly stopped — DevTools ▸ Network ▸
+            Offline is the cleanest way — then bring it back.
+          </p>
+          <div class="outcome">
+            <span class="chip ok">expect</span>
+            <p>A red line: <em>"The seated measurement is saved, but its full recording
+              did not reach the server. Press Resend recording. Do not close this page
+              until it succeeds."</em> — and a <strong>Resend recording</strong> button
+              beneath it. Pressing it after the network returns stores the file and
+              writes the marker.</p>
+            <span class="chip warn">note</span>
+            <p>The numbers are safe either way; they are written before the upload is
+              attempted. The recording is what is at risk, and it exists nowhere but
+              that browser tab until it uploads.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="stepnum">5</div>
+        <h3>A full visit, seated and standing</h3>
+        <div class="step-body">
+          <p>
+            With <code>dizz</code> or <code>faint</code> set so standing is required, run
+            the whole thing: connect, seated, standing, and check the fields.
+          </p>
+          <div class="outcome">
+            <span class="chip ok">expect</span>
+            <p>Two files, two markers, both averages, both heart rates, and the visit
+              reporting itself complete.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="stepnum">6</div>
+        <h3>A device that is not in AOBP mode</h3>
+        <div class="step-body">
+          <p>
+            New behaviour, and worth seeing once so it is not mistaken for a fault.
+            A BP+ in suprasystolic mode measures something else entirely — a central
+            pressure waveform from one inflation, not the three-reading average this
+            study records — and a reading taken that way lands in
+            <code>seated_ave_sys</code> looking exactly like a protocol one.
+          </p>
+          <div class="outcome">
+            <span class="chip ok">expect</span>
+            <p>Start is <strong>refused</strong>, not warned about:
+              <em>"BP+ connected, but it is not in AOBP mode. Press Set AOBP mode to
+              switch it."</em> Set AOBP mode and Ping stay live, because gating the
+              button that fixes the mode on already being in that mode would leave
+              every control dead.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>If step 1 fails</h2>
+    <div class="flag">
+      <p>
+        <strong>Most likely cause.</strong> The External Modules framework treats a
+        survey respondent as unauthenticated, and an AJAX action may have to be declared
+        before it can be called from there. If the console shows the request rejected
+        rather than a <code>REDCap::saveFile</code> error, try adding this to
+        <code>config.json</code> beside <code>"framework-version"</code>:
+      </p>
+      <pre>"no-auth-ajax-actions": ["save-xml"],</pre>
+      <p>
+        We have not been able to verify that key name against your framework version —
+        please check it against the documentation for the REDCap you are running rather
+        than taking it from us.
+      </p>
+    </div>
+    <p>
+      The other possibility is <code>\REDCap::saveFile()</code> itself. That call, with
+      its ten positional arguments, is the one from your
+      <code>aobp_integration_v1.0.1/ajax.php</code> — we kept it rather than substituting
+      our own guess, but we have never seen it run. If it is the wrong method for this
+      REDCap version, <code>REDCap::addFileToField()</code> is the first alternative to try.
+    </p>
+  </section>
+
+  <section>
+    <h2>Fields the module writes that the instrument doesn't have</h2>
+    <p>
+      Three, all of which need a decision rather than a fix. The module writes them and
+      logs a console warning when the field is absent; nothing breaks.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>What it carries</th><th>Decision</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="mono">seated_snr<br>standing_snr</td>
+            <td>Signal-to-noise ratio for the determination, as the device reports it</td>
+            <td>Add as numeric fields, or we drop them. Worth having: it is the one
+              number that separates a clean measurement from a marginal one, and the
+              context is otherwise lost when the XML leaves the page</td>
+          </tr>
+          <tr>
+            <td class="mono">sys_measurement_status</td>
+            <td>A short status string the module has always written</td>
+            <td>The dictionary has <code>sys_measurement_complete</code>, a calc field,
+              which is not the same thing. Add the field, or tell us to stop writing it</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Still open</h2>
+    <div class="panel">
+      <div class="q">
+        <h3>Should a failed measurement end the visit?</h3>
+        <p>
+          At present it does not — the buttons stay live and the operator can repeat.
+          A failure that must be recorded as a failure is a different design, and it is
+          your call which one the study wants.
+        </p>
+      </div>
+      <div class="q">
+        <h3>The three-second auto-advance to standing is off</h3>
+        <p>
+          It is still in the module behind a project setting. We turned it off because a
+          timer that starts a measurement while the participant is still standing up
+          produces a reading nobody asked for, but it is one checkbox to restore.
+        </p>
+      </div>
+      <div class="q">
+        <h3>Measurements started on the device are cancelled</h3>
+        <p>
+          A measurement begun with the BP+'s own Start button carries no patient ID and
+          belongs to no record, but the device stores it anyway. The page stops it and
+          tells the operator to use the page instead. Say if that is too strict.
+        </p>
+      </div>
+      <div class="q">
+        <h3>Android tablets need the Prolific cable</h3>
+        <p>
+          On Android the BP+ is reached over WebUSB, which drives the adapter chip
+          directly, and the module ships one driver — Prolific PL2303. On a desktop the
+          operating system supplies the driver and any adapter works. Worth knowing
+          before a site buys cables.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      A working copy of the instrument, with a stand-in for this module, runs at
+      <a href="https://utas.centralbp.com/test/harness-visit.html">utas.centralbp.com/test/harness-visit.html</a>
+      — the page reports its build number in the banner, and every measurement path
+      above has been exercised there against both a simulator and a real BP+. What it
+      cannot exercise is REDCap itself, which is what tomorrow is for.
+    </p>
+  </footer>
+
+</div>
