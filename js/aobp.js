@@ -974,8 +974,7 @@
           setStatus(deviceIsAobp() ? 'success' : 'error',
             deviceIsAobp()
               ? 'BP+ connected.'
-              : 'BP+ connected, but it is not in AOBP mode, so it would ' +
-                'measure the wrong thing. ' +
+              : 'BP+ connected, but it is not in AOBP mode. ' +
                 (canSetAobpMode() && ui.setAobp
                   ? 'Press Set AOBP mode to switch it.'
                   : 'It must be switched to AOBP mode before it can be used.'),
