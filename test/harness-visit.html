@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AOBP Visit — Instrument Harness</title>
+<style>
+  :root {
+    --ink:#1c2430; --muted:#5d6b7a; --line:#d8dee6; --ground:#f6f8fa; --panel:#fff;
+    --accent:#0b5394; --ok:#2d6a4f; --ok-bg:#d8f3dc; --bad:#b71c1c; --bad-bg:#fdecea;
+    --warn-bg:#fff8e1; --warn-line:#ffe082;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+         font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; padding:28px 22px 80px; }
+  h1 { font-size:26px; margin:0 0 4px; letter-spacing:-0.01em; }
+  h2 { font-size:15px; text-transform:uppercase; letter-spacing:.07em;
+       color:var(--muted); margin:0 0 12px; font-weight:600; }
+  .sub { color:var(--muted); margin:0 0 20px; max-width:70ch; }
+  .grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,400px);
+          gap:22px; align-items:start; }
+  @media (max-width:940px) { .grid { grid-template-columns:minmax(0,1fr); } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+          padding:18px; margin-bottom:20px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  label { font-weight:600; font-size:13px; color:var(--muted); }
+  select, input[type=text] { font:inherit; padding:7px 9px; border:1px solid var(--line);
+          border-radius:6px; background:#fff; color:var(--ink); }
+  button { font:inherit; font-weight:600; padding:9px 16px; border-radius:7px;
+           border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
+  button.secondary { background:#fff; color:var(--accent); }
+  button.danger { background:var(--bad); border-color:var(--bad); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; }
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; width:46%; }
+  td.v { font-family:ui-monospace,Consolas,monospace; word-break:break-all; }
+  td.set { background:#f2fbf5; }
+  .empty { color:#9aa7b4; }
+  pre { background:#0f1720; color:#cfe3f5; padding:12px; border-radius:8px;
+        overflow-x:auto; font-size:12.5px; max-height:260px; }
+  .note { background:var(--warn-bg); border:1px solid var(--warn-line);
+          border-radius:8px; padding:12px 14px; margin-bottom:20px; font-size:14px; }
+
+  /* The instrument reproduction. Dashed like the other harness, so it is obvious
+     which part is standing in for REDCap. */
+  .redcap { border:2px dashed #b9c6d4; border-radius:10px; padding:16px;
+            background:#fbfdff; margin-bottom:20px; }
+  .instruct { background:#eef4fa; border-left:4px solid var(--accent);
+              padding:12px 16px; border-radius:0 8px 8px 0; margin:14px 0; }
+  .instruct b { display:block; margin-bottom:4px; }
+  .blockhead { font-size:13px; text-transform:uppercase; letter-spacing:.07em;
+               color:var(--muted); font-weight:700; margin:22px 0 8px;
+               padding-top:14px; border-top:1px solid var(--line); }
+  .branchtag { font:11px/1 ui-monospace,Consolas,monospace; color:var(--muted);
+               background:#eef2f6; border-radius:99px; padding:3px 9px; margin-left:6px; }
+  .hidden-by-branching { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>AOBP Visit — Instrument Harness</h1>
+
+  <div id="build-banner" style="background:#0b5394;color:#fff;border-radius:8px;
+       padding:10px 14px;margin-bottom:16px;font:600 15px/1.45 ui-monospace,
+       Consolas,monospace">loading…</div>
+
+  <p class="sub">
+    Reproduces the <code>aobp_visit</code> instrument from
+    <code>AOBPDEV_DataDictionary_2026-08-31.csv</code>: one page, both
+    measurements, the standing block gated by branching logic on
+    <code>sys_standing_required</code>. Runs <code>js/aobp.js</code> unmodified.
+  </p>
+
+  <div class="note">
+    <b>Why this exists alongside <code>harness.html</code>.</b>
+    That one is a flat stand-in with a single set of controls. This one has
+    <b>two blocks on one page</b>, which is what the dictionary describes —
+    and it is the arrangement in which duplicate element ids collide. Branching
+    here hides the standing block with <code>display:none</code> and leaves it in
+    the DOM, exactly as REDCap does.
+  </div>
+
+  <div class="row" style="margin-bottom:20px">
+    <label for="transport">Device</label>
+    <select id="transport">
+      <option value="auto">auto (what REDCap would choose)</option>
+      <option value="serial-all">WebSerial, every port</option>
+      <option value="usb">WebUSB + PL2303 driver</option>
+    </select>
+
+    <label for="use-simulator" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="checkbox" id="use-simulator" checked> Use simulator
+    </label>
+
+    <label for="simmode">Simulated mode</label>
+    <select id="simmode">
+      <option value="5">BP+ AOBP</option>
+      <option value="0">BP+ (not AOBP)</option>
+    </select>
+
+    <label for="record">Record</label>
+    <input type="text" id="record" value="TEST-001" size="10">
+
+    <label for="unique-ids" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="checkbox" id="unique-ids" checked> Per-block element ids
+    </label>
+  </div>
+
+  <div class="grid">
+    <div>
+
+      <!-- ── The instrument ───────────────────────────────────────────── -->
+      <div class="redcap">
+        <h2>Stand-in for aobp_visit</h2>
+
+        <div class="instruct">
+          <b>aobp_post_hypo</b>
+          Since your last visit, have you had any episodes of dizziness or
+          light-headedness, or fainting?
+        </div>
+
+        <div class="row" style="margin-bottom:6px">
+          <label>dizz</label>
+          <select id="dizz"><option value="0">0 — No</option><option value="1">1 — Yes</option><option value="9">9 — Prefer not to say</option></select>
+          <label>faint</label>
+          <select id="faint"><option value="0">0 — No</option><option value="1">1 — Yes</option><option value="9">9 — Prefer not to say</option></select>
+        </div>
+
+        <p style="font:13px/1.5 ui-monospace,Consolas,monospace;color:#5d6b7a;margin:6px 0 0">
+          sys_standing_required (calc, @HIDDEN) =
+          <b id="calc-readout">0</b>
+          <span class="branchtag">if([dizz]='1' or '9' or [faint]='1' or '9', 1, 0)</span>
+        </p>
+        <input type="hidden" name="sys_standing_required" id="sys_standing_required" value="0">
+
+        <div id="aobp-stand-yes" class="instruct hidden-by-branching">
+          <b>aobp_stand_yes</b>
+          A standing measurement is required for this participant.
+        </div>
+        <div id="aobp-stand-no" class="instruct">
+          <b>aobp_stand_no</b>
+          A seated measurement only is required.
+        </div>
+
+        <!-- ── seated ─────────────────────────────────────────────────── -->
+        <div class="blockhead">Seated block</div>
+
+        <div class="instruct">
+          <b>aobp_instruct_seat1 / seat2</b>
+          Seat the participant with their back supported and feet flat. Fit the
+          cuff to the bare upper arm. Leave the room and close the door.
+        </div>
+
+        <div class="row" style="margin-bottom:12px">
+          <button id="connect-bp-btn-seated" type="button">Connect BP+</button>
+          <button id="start-seated-btn" type="button">Start seated</button>
+          <button id="cancel-bp-btn-seated" type="button" class="danger">Cancel</button>
+          <button id="repeat-btn-seated" type="button" class="secondary">Repeat</button>
+        </div>
+
+        <div id="status-display-seated" style="margin-bottom:10px"></div>
+        <div id="alerts-display-seated" style="display:none"></div>
+        <div id="visit-state-seated" style="margin-top:10px"></div>
+        <div id="seated-results-panel"></div>
+
+        <!-- ── standing ───────────────────────────────────────────────── -->
+        <div id="standing-block" class="hidden-by-branching">
+          <div class="blockhead">
+            Standing block
+            <span class="branchtag">[sys_standing_required] = '1'</span>
+          </div>
+
+          <div class="instruct">
+            <b>aobp_instruct_stand</b>
+            Ask the participant to stand. Wait one minute before starting.
+          </div>
+
+          <div class="row" style="margin-bottom:12px">
+            <button id="connect-bp-btn-standing" type="button">Connect BP+</button>
+            <button id="start-standing-btn" type="button">Start standing</button>
+            <button id="cancel-bp-btn-standing" type="button" class="danger">Cancel</button>
+            <button id="repeat-btn-standing" type="button" class="secondary">Repeat</button>
+          </div>
+
+          <div id="status-display-standing" style="margin-bottom:10px"></div>
+          <div id="alerts-display-standing" style="display:none"></div>
+          <div id="visit-state-standing" style="margin-top:10px"></div>
+          <div id="standing-results-panel"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Serial trace</h2>
+        <pre id="trace">(nothing yet)</pre>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>REDCap fields as they would be saved</h2>
+        <table id="fields"><tbody></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- The radios the module clicks. Hidden: they only need to exist. -->
+<div style="display:none">
+  <input type="radio" id="opt-seated_af_0"   name="seated_af"   value="0">
+  <input type="radio" id="opt-seated_af_1"   name="seated_af"   value="1">
+  <input type="radio" id="opt-standing_af_0" name="standing_af" value="0">
+  <input type="radio" id="opt-standing_af_1" name="standing_af" value="1">
+</div>
+
+<script>
+// ── The fields the module writes, created before aobp.js loads ─────────────
+const TEXT_FIELDS = [
+  'seated_ave_sys','seated_ave_dia','seated_ave_hr','seated_datetime',
+  'seated_guid','seated_bpplus_device_id','seated_snr','seated_raw_xml_text',
+  'standing_ave_sys','standing_ave_dia','standing_ave_hr','standing_datetime',
+  'standing_guid','standing_bpplus_device_id','standing_snr','standing_raw_xml_text',
+  'sys_measurement_status',
+];
+const hidden = document.createElement('div');
+hidden.style.display = 'none';
+for (const name of TEXT_FIELDS) {
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = name;
+  hidden.appendChild(input);
+}
+document.body.appendChild(hidden);
+
+window.AOBP_CONFIG = {
+  record: document.getElementById('record').value,
+  event_id: '1', repeat_instance: '1', pid: '0',
+  sdkUrl: new URL('../sdk/index.js?v=1.7.1', location.href).href,
+  saveXmlAsFile: false,
+  clockToleranceMinutes: 5,
+  trace: true,
+  autoAdvanceStanding: false,
+  detailedWarnings: true,
+};
+document.getElementById('record').addEventListener('input', function () {
+  window.AOBP_CONFIG.record = this.value;
+});
+</script>
+
+<script src="../js/aobp.js?v=1.7.1"></script>
+
+<script type="module">
+import * as sdk from '../sdk/index.js?v=1.7.1';
+
+const BUILD = '1.7.1';
+const BUILT = '2026-08-31';
+const $ = id => document.getElementById(id);
+
+$('build-banner').textContent = `visit harness build ${BUILD} · ${BUILT}`;
+window.addEventListener('load', () => setTimeout(() => {
+  if (!window.AOBP) {
+    $('build-banner').style.background = '#b3261e';
+    $('build-banner').textContent += '  ·  WARNING: aobp.js did not initialise';
+  }
+}, 300));
+
+// ── Transport ──────────────────────────────────────────────────────────────
+window.AOBP_TRANSPORT = function (api) {
+  if ($('use-simulator').checked) {
+    return new api.SimulatorTransport({ measureMode: Number($('simmode').value), tickMs: 8 });
+  }
+  const choice = $('transport').value;
+  if (choice === 'serial-all') return new api.WebSerialTransport();
+  if (choice === 'usb') return new api.UsbSerialTransport({ offerAllDrivers: true });
+
+  const pick = api.recommendedTransport();
+  if (pick.kind === api.TransportKind.serial) return new api.WebSerialTransport();
+  if (pick.kind === api.TransportKind.usbSerial) return new api.UsbSerialTransport();
+  throw new Error('This browser cannot reach a BP+ on a cable. ' + pick.reason);
+};
+
+// ── The calc field, and the branching it drives ────────────────────────────
+// REDCap hides a branched-out field with display:none and leaves it in the DOM.
+// Reproduced exactly, because that is what makes duplicate ids collide.
+function recalculate() {
+  const dizz = $('dizz').value, faint = $('faint').value;
+  const required = (dizz === '1' || dizz === '9' || faint === '1' || faint === '9') ? '1' : '0';
+
+  $('sys_standing_required').value = required;
+  $('calc-readout').textContent = required;
+
+  $('standing-block').classList.toggle('hidden-by-branching', required !== '1');
+  $('aobp-stand-yes').classList.toggle('hidden-by-branching', required !== '1');
+  $('aobp-stand-no').classList.toggle('hidden-by-branching', required === '1');
+}
+$('dizz').addEventListener('change', recalculate);
+$('faint').addEventListener('change', recalculate);
+recalculate();
+
+// ── Per-block ids on or off ────────────────────────────────────────────────
+// Off reproduces the dictionary as it stands today: both blocks using the same
+// id. The standing controls then go dead, because getElementById returns the
+// seated one. Requires a reload, since the module reads the DOM once at start.
+const SUFFIXED = ['connect-bp-btn', 'cancel-bp-btn', 'status-display',
+                  'alerts-display', 'visit-state', 'repeat-btn'];
+
+if (sessionStorage.getItem('aobp-shared-ids') === '1') {
+  $('unique-ids').checked = false;
+  for (const base of SUFFIXED) {
+    for (const mode of ['seated', 'standing']) {
+      const el = $(base + '-' + mode);
+      if (el) el.id = base;               // deliberate collision
+    }
+  }
+}
+
+$('unique-ids').addEventListener('change', function () {
+  sessionStorage.setItem('aobp-shared-ids', this.checked ? '0' : '1');
+  location.reload();
+});
+
+// ── Trace ──────────────────────────────────────────────────────────────────
+const lines = [];
+setInterval(() => {
+  const device = window.AOBP && window.AOBP.device;
+  if (!device || device.__watched) return;
+  device.__watched = true;
+  device.on('log', e => {
+    lines.push((e.dir === 'tx' ? '> ' : '< ') + e.text);
+    if (lines.length > 300) lines.shift();
+    const pre = $('trace');
+    pre.textContent = lines.join('\n');
+    pre.scrollTop = pre.scrollHeight;
+  });
+}, 400);
+
+// ── What REDCap would save ─────────────────────────────────────────────────
+function renderFields() {
+  const rows = [];
+  for (const name of TEXT_FIELDS) {
+    const el = document.querySelector(`[name="${name}"]`);
+    let v = el ? el.value : '';
+    if (name.endsWith('_raw_xml_text') && v) v = `(${v.length} characters of XML)`;
+    rows.push([name, v]);
+  }
+  for (const name of ['seated_af', 'standing_af']) {
+    const picked = document.querySelector(`[name="${name}"]:checked`);
+    rows.push([name, picked ? picked.value : '']);
+  }
+  rows.push(['sys_standing_required', $('sys_standing_required').value]);
+
+  $('fields').querySelector('tbody').innerHTML = rows.map(([k, v]) =>
+    `<tr><th>${k}</th><td class="v ${v ? 'set' : ''}">${
+      v ? String(v).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))
+        : '<span class="empty">—</span>'}</td></tr>`).join('');
+}
+document.addEventListener('aobp:measurement', renderFields);
+setInterval(renderFields, 1000);
+renderFields();
+</script>
+</body>
+</html>

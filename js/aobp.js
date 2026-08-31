@@ -6,25 +6,39 @@
  * What is left here is the part that is specific to this study: which REDCap
  * fields to fill, which buttons drive it, and what the operator is told.
  *
- * The DOM contract, on the `aobp_visit` instrument:
+ * The DOM contract, on the `aobp_visit` instrument.
+ *
+ * Per position — each may be suffixed `-seated` or `-standing` when the
+ * instrument gives the two measurements their own blocks on one page. The
+ * suffixed id wins where it exists; the bare id is the fallback, and is what a
+ * single-block instrument has always used. See control() below for why that
+ * matters: REDCap branching hides a block but leaves it in the DOM, so two
+ * blocks sharing one id collide.
  *
  *   #connect-bp-btn        starts the browser's serial port picker
+ *   #status-display        the single large status line
+ *   #cancel-bp-btn         optional; live only while a measurement is running
+ *   #repeat-btn            optional; retakes that position, replacing what is
+ *                          stored. Live only once there is something to replace
+ *   #alerts-display        optional; what the device said about the measurement
+ *   #visit-state           optional; what the record still needs, and whether
+ *                          it is ready to submit
+ *
+ * Per position, fixed names:
+ *
  *   #start-seated-btn      seated measurement, then standing if required
  *   #start-standing-btn    standing measurement on its own
- *   #cancel-bp-btn         optional; live only while a measurement is running
+ *   #seated-results-panel  filled after each measurement
+ *   #standing-results-panel
+ *
+ * Page level — one device, so one of each:
+ *
  *   #set-aobp-mode-btn     optional; live only when the device is not in AOBP
  *                          mode and can be told to be
  *   #ping-bp-btn           optional; checks the link is live and the device is
  *                          still the one we think it is
- *   #visit-state           optional; what the record still needs, and whether
- *                          it is ready to submit
- *   #alerts-display        optional; what the device said was wrong, in its own
- *                          words — messages only, never the TM2917 hex
  *   #device-info           optional; versions and mode, for an instrument whose
  *                          reader is a technician rather than a nurse
- *   #status-display        the single large status line
- *   #seated-results-panel  filled after each measurement
- *   #standing-results-panel
  *
  * Loaded as a classic script, because a REDCap survey page includes it with a
  * plain <script src>. The SDK is ES modules, so it is brought in with a dynamic
@@ -113,24 +127,52 @@
   });
 
   async function start() {
+    /**
+     * One control, for one body position.
+     *
+     * An instrument may put the seated and standing measurements in separate
+     * blocks on the same page, each with its own connect button, status line and
+     * results panel. REDCap's branching hides a block with `display:none` but
+     * leaves it in the DOM, so two blocks that both use `id="status-display"`
+     * collide: getElementById returns the first, and everything the standing
+     * measurement says lands in the seated block's status line.
+     *
+     * So a per-position id wins if the instrument provides one, and the shared
+     * id is the fallback — which is what an instrument with a single block, like
+     * the one this module shipped against, has always used.
+     */
+    function control(base, mode) {
+      return document.getElementById(base + '-' + mode) ||
+             document.getElementById(base);
+    }
+
+    function blockFor(mode) {
+      return {
+        connect: control('connect-bp-btn', mode),
+        cancel:  control('cancel-bp-btn', mode),
+        status:  control('status-display', mode),
+        alerts:  control('alerts-display', mode),
+        visit:   control('visit-state', mode),
+        repeat:  control('repeat-btn', mode),
+        panel:   document.getElementById(mode + '-results-panel'),
+      };
+    }
+
+    var blocks = { seated: blockFor('seated'), standing: blockFor('standing') };
+
+    // Which block the operator is working in, and therefore where messages go.
+    var currentMode = 'seated';
+
     var ui = {
-      connect:  document.getElementById('connect-bp-btn'),
       seated:   document.getElementById('start-seated-btn'),
       standing: document.getElementById('start-standing-btn'),
-      cancel:   document.getElementById('cancel-bp-btn'),
+      // Page-level rather than per position: one device, one set of versions.
       setAobp:  document.getElementById('set-aobp-mode-btn'),
       ping:     document.getElementById('ping-bp-btn'),
-      visit:    document.getElementById('visit-state'),
-      alerts:   document.getElementById('alerts-display'),
       info:     document.getElementById('device-info'),
-      status:   document.getElementById('status-display'),
-      panels: {
-        seated:   document.getElementById('seated-results-panel'),
-        standing: document.getElementById('standing-results-panel'),
-      },
     };
 
-    if (!ui.connect && !ui.seated && !ui.standing) return;   // not our instrument
+    if (!blocks.seated.connect && !ui.seated && !ui.standing) return;   // not our instrument
 
     var sdk = null;          // the imported module namespace
     var device = null;
@@ -154,19 +196,32 @@
       error:   { background: '#fdecea', border: '1px solid #f5c2c0', color: '#b71c1c' },
     };
 
-    function setStatus(kind, message) {
+    /**
+     * @param {string} [mode]  'seated' | 'standing' | 'all'. Defaults to the
+     *        block the operator is working in. 'all' is for a message that is
+     *        true of the page rather than of one measurement — an operator who
+     *        scrolls to the standing block first should not find it blank.
+     */
+    function setStatus(kind, message, mode) {
       console.log('[AOBP] ' + kind.toUpperCase() + ':', message);
-      if (!ui.status) return;
+
+      if (mode === 'all') {
+        for (var each in blocks) setStatus(kind, message, each);
+        return;
+      }
+
+      var el = blocks[mode || currentMode].status;
+      if (!el) return;
 
       var style = STATUS_STYLES[kind] || STATUS_STYLES.normal;
-      ui.status.style.background = style.background;
-      ui.status.style.border     = style.border;
-      ui.status.style.color      = style.color;
-      ui.status.style.fontSize   = '24px';
-      ui.status.style.fontWeight = '600';
-      ui.status.style.textAlign  = 'center';
-      ui.status.style.padding    = '18px';
-      ui.status.innerText = message;
+      el.style.background = style.background;
+      el.style.border     = style.border;
+      el.style.color      = style.color;
+      el.style.fontSize   = '24px';
+      el.style.fontWeight = '600';
+      el.style.textAlign  = 'center';
+      el.style.padding    = '18px';
+      el.innerText = message;
     }
 
     // ── REDCap fields ───────────────────────────────────────────────────────
@@ -257,31 +312,42 @@
       });
 
       await device.connect();
+      setStatus('normal', 'Checking the BP+ — please wait…', 'all');
 
-      // device.connect() only opens the port — it sends nothing and waits for
-      // nothing. The feature list is the first thing the device actually says,
-      // so it is what proves a BP+ is on the other end at all.
-      //
-      // Deliberately not caught. Every BP+ answers `f`; silence means the port
-      // opened onto something that is not a BP+ — the wrong COM port, or a
-      // cable with nothing on the end. Reporting that as a connection would
-      // hand the operator a green status line and two live buttons attached to
-      // nothing.
-      features = await device.readFeatures();
+      // Everything from here can fail, and the port is already open. A failure
+      // has to give it back: a serial port this page still holds cannot be
+      // opened again, so without this the operator's second attempt meets "the
+      // port is already open" and a page reload is the only way out.
+      try {
+        // device.connect() only opens the port — it sends nothing and waits for
+        // nothing. The feature list is the first thing the device actually
+        // says, so it is what proves a BP+ is on the other end at all.
+        //
+        // Every BP+ answers `f`; silence means the port opened onto something
+        // that is not a BP+ — the wrong COM port, or a cable with nothing on
+        // the end. Reporting that as a connection would hand the operator a
+        // green status line and two live buttons attached to nothing.
+        features = await device.readFeatures();
 
-      apiVersion = await device.readApiVersion().catch(function (error) {
-        console.warn('[AOBP] no Terminal API version:', error.message);
-        return null;
-      });
+        apiVersion = await device.readApiVersion().catch(function (error) {
+          console.warn('[AOBP] no Terminal API version:', error.message);
+          return null;
+        });
 
-      console.log('[AOBP] device ' + features.deviceId +
-                  ', firmware ' + features.softwareVersion +
-                  ', feature list ' + features.version +
-                  ', Terminal API ' + (apiVersion || 'unknown') +
-                  ', mode ' + features.measureModeInfo.label);
+        console.log('[AOBP] device ' + features.deviceId +
+                    ', firmware ' + features.softwareVersion +
+                    ', feature list ' + features.version +
+                    ', Terminal API ' + (apiVersion || 'unknown') +
+                    ', mode ' + features.measureModeInfo.label);
 
-      var shortfall = capabilityShortfall(features, apiVersion);
-      if (shortfall) throw new Error(shortfall);
+        var shortfall = capabilityShortfall(features, apiVersion);
+        if (shortfall) throw new Error(shortfall);
+      } catch (error) {
+        try { await device.disconnect(); } catch (ignored) { /* already gone */ }
+        device = null;
+        features = null;
+        throw error;
+      }
     }
 
     /**
@@ -430,7 +496,7 @@
     }
 
     function renderPanel(mode, measurement) {
-      var panel = ui.panels[mode];
+      var panel = blocks[mode].panel;
       if (!panel) return;
 
       var theme = mode === 'seated'
@@ -515,8 +581,9 @@
      * the module's raw reply: it belongs in the console and in a support
      * report, and means nothing to the person holding the cuff.
      */
-    function showAlerts(alerts, quality, succeeded) {
-      if (!ui.alerts) return;
+    function showAlerts(alerts, quality, succeeded, mode) {
+      var el = blocks[mode || currentMode].alerts;
+      if (!el) return;
 
       var list = alerts || [];
 
@@ -531,8 +598,8 @@
         list = list.filter(function (alert) { return alert.severity === 'good'; });
       }
       if (!list.length && !(quality && quality.known)) {
-        ui.alerts.style.display = 'none';
-        ui.alerts.innerText = '';
+        el.style.display = 'none';
+        el.innerText = '';
         return;
       }
 
@@ -575,17 +642,17 @@
       }
 
       var style = ALERT_STYLES[worst] || ALERT_STYLES.bad;
-      ui.alerts.style.display      = '';
-      ui.alerts.style.background   = style.background;
-      ui.alerts.style.border       = style.border;
-      ui.alerts.style.color        = style.color;
-      ui.alerts.style.borderRadius = '8px';
-      ui.alerts.style.padding      = '10px 14px';
-      ui.alerts.style.marginTop    = '10px';
-      ui.alerts.style.fontWeight   = '600';
+      el.style.display      = '';
+      el.style.background   = style.background;
+      el.style.border       = style.border;
+      el.style.color        = style.color;
+      el.style.borderRadius = '8px';
+      el.style.padding      = '10px 14px';
+      el.style.marginTop    = '10px';
+      el.style.fontWeight   = '600';
 
       var newline = String.fromCharCode(10);
-      ui.alerts.innerText = trouble.length
+      el.innerText = trouble.length
         ? summary + newline + '• ' + trouble.join(newline + '• ')
         : summary;
     }
@@ -643,7 +710,7 @@
         return false;
       }
 
-      showAlerts([], null, false);
+      showAlerts([], null, false, mode);
       setStatus('normal', label + ': measuring — keep the arm still.');
 
       // Cancel is live only while the cuff is on the arm. A participant who
@@ -657,7 +724,7 @@
         measurement = await measure(mode);
       } catch (error) {
         setStatus('error', label + ': ' + describe(error));
-        showAlerts(error.alerts, null, false);
+        showAlerts(error.alerts, null, false, mode);
         console.error('[AOBP]', error);
         return false;
       } finally {
@@ -687,7 +754,7 @@
 
       lastMeasurement = measurement;
       showAlerts(sdk.alertsOf(measurement, features && features.bpRange),
-                 measurement.signalQuality, true);
+                 measurement.signalQuality, true, mode);
       setStatus('normal', label + ': saving results…');
       storeResult(mode, measurement);
       renderPanel(mode, measurement);
@@ -757,6 +824,16 @@
                  ' Check the cuff and the hose for a kink, then repeat the measurement.';
         }
 
+        // A port that opened but never answered. The SDK says which command
+        // timed out, which is right for a log and useless to a nurse: the only
+        // thing she can act on is the cable. Most often it is not plugged into
+        // the BP+ at all, or the BP+ is off.
+        if (sdk && error.code === sdk.ResultCode.timeoutOrConnectionError) {
+          return 'Could not connect to the BP+. Check the cable is pushed all ' +
+                 'the way into the BP+ and that the device is switched on, ' +
+                 'then press Connect BP+ again.';
+        }
+
         return error.message;
       }
       return error.message || String(error);
@@ -764,24 +841,54 @@
 
     // ── Buttons ─────────────────────────────────────────────────────────────
 
-    if (ui.connect) {
-      ui.connect.addEventListener('click', async function () {
-        setEnabled(ui.connect, false);
-        setStatus('normal', 'Select the BP+ serial port…');
+    /**
+     * Connect, from whichever block the operator pressed it in.
+     *
+     * One device serves both positions, so the first connect is the only one
+     * that opens a port. A second press from the other block finds the device
+     * already connected and simply reports it, rather than sending the operator
+     * back to the browser's picker.
+     */
+    function wireConnect(mode) {
+      var button = blocks[mode].connect;
+      if (!button) return;
+
+      button.addEventListener('click', async function () {
+        currentMode = mode;
+
+        if (device) {
+          setStatus('success', 'BP+ already connected.', mode);
+          hideConnectButtons();
+          updateButtons();
+          return;
+        }
+
+        setEnabled(button, false);
+        setStatus('normal', 'Select the BP+ serial port…', mode);
         try {
           await connect();
           setStatus('success', 'BP+ connected' +
-            (deviceIsAobp() ? '' : ' — the device is NOT in AOBP mode'));
-          ui.connect.style.display = 'none';
+            (deviceIsAobp() ? '' : ' — the device is NOT in AOBP mode'), 'all');
+          hideConnectButtons();
           updateButtons();
         } catch (error) {
           device = null;
-          setEnabled(ui.connect, true);
-          setStatus('error', describe(error));
+          setEnabled(button, true);
+          setStatus('error', describe(error), mode);
           console.error('[AOBP]', error);
         }
       });
     }
+
+    /** Once the device is open, no block needs to offer Connect again. */
+    function hideConnectButtons() {
+      for (var mode in blocks) {
+        if (blocks[mode].connect) blocks[mode].connect.style.display = 'none';
+      }
+    }
+
+    wireConnect('seated');
+    wireConnect('standing');
 
     /**
      * Take one measurement and then work out what the visit still needs.
@@ -793,6 +900,8 @@
      * There is now one path and one place that decides what is live.
      */
     async function takeMeasurement(mode) {
+      currentMode = mode;
+
       if (!device) {
         setStatus('error', 'Please connect the BP+ first.');
         return;
@@ -902,19 +1011,27 @@
      * half-finished.
      */
     function renderVisitState() {
-      if (!ui.visit) return;
-
       var state = visitStateText();
       var style = VISIT_STYLES[state.kind] || VISIT_STYLES.waiting;
+      var painted = [];
 
-      ui.visit.style.background   = style.background;
-      ui.visit.style.border       = style.border;
-      ui.visit.style.color        = style.color;
-      ui.visit.style.borderRadius = '8px';
-      ui.visit.style.padding      = '10px 14px';
-      ui.visit.style.fontWeight   = '600';
-      ui.visit.style.textAlign    = 'center';
-      ui.visit.innerText = state.text;
+      // Every block that has one, because the answer is about the record rather
+      // than about a position — and an operator reading the standing block
+      // should not have to scroll up to learn the visit is finished.
+      for (var mode in blocks) {
+        var el = blocks[mode].visit;
+        if (!el || painted.indexOf(el) !== -1) continue;
+        painted.push(el);
+
+        el.style.background   = style.background;
+        el.style.border       = style.border;
+        el.style.color        = style.color;
+        el.style.borderRadius = '8px';
+        el.style.padding      = '10px 14px';
+        el.style.fontWeight   = '600';
+        el.style.textAlign    = 'center';
+        el.innerText = state.text;
+      }
     }
 
     function visitStateText() {
@@ -948,7 +1065,10 @@
 
       setEnabled(ui.seated,   ready);
       setEnabled(ui.standing, ready);
-      setEnabled(ui.cancel,   !!device && busy);
+      for (var mode in blocks) {
+        setEnabled(blocks[mode].cancel, !!device && busy);
+        setEnabled(blocks[mode].repeat, ready && hasReading(mode));
+      }
       setEnabled(ui.setAobp,  ready && canSetAobpMode());
       setEnabled(ui.ping,     ready);
 
@@ -1079,8 +1199,11 @@
       ].join(newline);
     }
 
-    if (ui.cancel) {
-      ui.cancel.addEventListener('click', async function () {
+    function wireCancel(mode) {
+      var button = blocks[mode].cancel;
+      if (!button) return;
+
+      button.addEventListener('click', async function () {
         if (!device) return;
 
         // Disabled immediately: the device answers a cancel with one F 02 and
@@ -1088,8 +1211,8 @@
         // cancel. The measurement's own promise rejects with F 02, so the
         // status line and the buttons are restored by the handler that started
         // it — there is nothing to put right here.
-        setEnabled(ui.cancel, false);
-        setStatus('normal', 'Cancelling…');
+        setEnabled(button, false);
+        setStatus('normal', 'Cancelling…', currentMode);
         try {
           await device.cancel();
         } catch (error) {
@@ -1100,7 +1223,36 @@
       });
     }
 
-    setStatus('ready', 'Connect the BP+ to begin.');
+    wireCancel('seated');
+    wireCancel('standing');
+
+    /** Whether this position already has a reading stored. */
+    function hasReading(mode) {
+      return mode === 'seated' ? seatedDone : standingDone;
+    }
+
+    /**
+     * Repeat the measurement for one position.
+     *
+     * The instrument offers this per block, and it means what it says: take that
+     * reading again, replacing what is stored. Live only once there is something
+     * to replace — offering "repeat" before a first measurement would be a
+     * second Start button with a misleading name.
+     */
+    function wireRepeat(mode) {
+      var button = blocks[mode].repeat;
+      if (!button) return;
+
+      button.addEventListener('click', function () {
+        console.log('[AOBP] repeating the ' + mode + ' measurement');
+        takeMeasurement(mode);
+      });
+    }
+
+    wireRepeat('seated');
+    wireRepeat('standing');
+
+    setStatus('ready', 'Connect the BP+ to begin.', 'all');
 
     // Exposed so the test harness can drive the same code the survey runs.
     window.AOBP = {

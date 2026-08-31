@@ -121,7 +121,56 @@ if (!JSDOM) {
   check('every control starts disabled',
     ['start-seated-btn', 'start-standing-btn', 'cancel-bp-btn', 'ping-bp-btn',
      'set-aobp-mode-btn'].every(id => el(id).disabled === true));
+
+  // ── Two blocks on one page ────────────────────────────────────────────────
+  // The visit instrument puts seated and standing in separate blocks with
+  // per-position ids. The module must bind each block's own controls; binding
+  // by the bare id would give both blocks the seated one.
+  const twoBlock = `<!doctype html><html><body>
+    <button id="connect-bp-btn-seated"></button>
+    <button id="start-seated-btn"></button>
+    <button id="cancel-bp-btn-seated"></button>
+    <button id="repeat-btn-seated"></button>
+    <div id="status-display-seated"></div>
+    <div id="alerts-display-seated"></div>
+    <div id="visit-state-seated"></div>
+    <div id="seated-results-panel"></div>
+    <button id="connect-bp-btn-standing"></button>
+    <button id="start-standing-btn"></button>
+    <button id="cancel-bp-btn-standing"></button>
+    <button id="repeat-btn-standing"></button>
+    <div id="status-display-standing"></div>
+    <div id="alerts-display-standing"></div>
+    <div id="visit-state-standing"></div>
+    <div id="standing-results-panel"></div>
+    <input type="hidden" name="sys_standing_required" value="1">
+  </body></html>`;
+
+  const dom2 = new JSDOM(twoBlock, { runScripts: 'outside-only', pretendToBeVisual: true });
+  const w2 = dom2.window;
+  w2.AOBP_CONFIG = { record: 'TEST-002', sdkUrl: 'about:blank' };
+  const errors2 = [];
+  w2.console.error = (...a) => errors2.push(a.map(String).join(' '));
+  w2.console.log = () => {};
+  w2.eval(fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8'));
+  w2.document.dispatchEvent(new w2.Event('DOMContentLoaded'));
+  await new Promise(r => setTimeout(r, 150));
+
+  const el2 = id => w2.document.getElementById(id);
+
+  console.log('\ntwo blocks, per-position ids');
+  check('the module starts', !!w2.AOBP);
+  check('nothing reached console.error', errors2.length === 0, errors2.join(' | '));
+  check('each block got its own status line',
+    !!el2('status-display-seated').innerText && !!el2('status-display-standing').innerText);
+  check('each block got its own visit state',
+    !!el2('visit-state-seated').innerText && !!el2('visit-state-standing').innerText);
+  check('both cancel buttons start disabled',
+    el2('cancel-bp-btn-seated').disabled && el2('cancel-bp-btn-standing').disabled);
+  check('both repeat buttons start disabled',
+    el2('repeat-btn-seated').disabled && el2('repeat-btn-standing').disabled);
 }
+
 
 // ── Is a result a reading? ───────────────────────────────────────────────────
 // The ranges are a real device's, from the feature list of the BP+ these were
@@ -251,6 +300,47 @@ console.log('\nrecovered retries');
   check('without a bpRange nothing is assumed recovered',
     alertsOf({ readings: [{ sys: 122, dia: 78, pr: 70, alert: fault }] }, null)[0]
       ?.severity === 'caution');
+}
+
+// ── A failed open must not keep the port ─────────────────────────────────────
+// Opening a serial port is several steps. A failure after the port itself
+// opened used to leave it held by the page with the transport marked
+// disconnected, so close() did nothing and the next attempt met "The port is
+// already open" from the browser — unrecoverable short of a reload.
+
+console.log('\npartial open releases the port');
+
+{
+  const { Transport } = await import('../sdk/transports/transport.js');
+
+  class HalfOpening extends Transport {
+    constructor() { super('Test'); this.closed = 0; this.portHeld = false; }
+    async _open() {
+      this.portHeld = true;                 // the port is now ours
+      throw new Error('could not take the reader');
+    }
+    async _close() { this.closed++; this.portHeld = false; }
+    async _write() {}
+  }
+
+  const t = new HalfOpening();
+  let threw = false;
+  try { await t.open(); } catch { threw = true; }
+
+  check('open() still reports the failure', threw);
+  check('_close() ran, so the port was given back', t.closed === 1);
+  check('nothing is still held', t.portHeld === false);
+  check('and the transport reads as disconnected', t.state === 'disconnected');
+
+  // A close that itself fails must not mask the original error.
+  class Stubborn extends HalfOpening {
+    async _close() { throw new Error('close failed too'); }
+  }
+  const s2 = new Stubborn();
+  let message = '';
+  try { await s2.open(); } catch (e) { message = e.message; }
+  check('a failing close does not hide why the open failed',
+    /could not take the reader/.test(message), message);
 }
 
 // ── A measurement started on the device is refused ───────────────────────────

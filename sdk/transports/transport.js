@@ -54,6 +54,15 @@ export class Transport extends Emitter {
       await this._open();
       this._setState(TransportState.connected);
     } catch (err) {
+      // Release whatever _open() managed to acquire before it failed. Opening a
+      // serial port is several steps — request the port, open it, take the
+      // reader and writer — and a failure at any step after the second leaves
+      // the port held by this page. The state then says disconnected, so
+      // close() would return without doing anything, and the next attempt meets
+      // "The port is already open" from the browser with no way to recover
+      // short of a reload.
+      try { await this._close(); } catch { /* nothing to release */ }
+
       this._setState(TransportState.disconnected);
       throw err instanceof Error && err.name === 'BpPlusError'
         ? err
