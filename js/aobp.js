@@ -880,32 +880,24 @@
                  ' Check the cuff and the hose for a kink, then repeat the measurement.';
         }
 
-        // Chrome's own words for a port the operating system would not hand
-        // over: "Failed to open serial port." It names no cause, and the two
-        // that matter are both fixable at the desk — another tab or program
-        // holding the cable, or a stale handle that a replug clears. The SDK
-        // has already tried closing and reopening once by the time this shows.
-        if (/failed to open serial port|port is already open/i.test(error.message)) {
-          return 'The USB cable is in use by something else. Close any other ' +
-                 'tab or program using the BP+, then unplug the cable, plug it ' +
-                 'back in, and press Connect BP+ again.';
-        }
-
-        // Everything else that code 18 covers: we could not ask, or we asked
-        // and nothing came back. The SDK names the command it was waiting for,
-        // or says it could not write — right for a log, and no use to a nurse,
-        // who can act on one thing only. Both ends of the cable are named,
-        // because either being loose produces this and the operator cannot be
-        // expected to know which end the message meant. "Not answering" rather
-        // than "could not connect": this also reaches a measurement that
-        // stopped mid-way, where nothing about connecting is what went wrong.
+        // Everything the SDK can name, in the SDK's words.
         //
-        // The port-open failures above share this code and are checked first;
-        // they are the one branch of 18 that is not about the cable.
-        if (sdk && error.code === sdk.ResultCode.timeoutOrConnectionError) {
-          return 'The BP+ is not answering. Check the cable is pushed all the ' +
-                 'way into the BP+ and into the computer, and that the BP+ is ' +
-                 'switched on, then try again.';
+        // This used to be a regex over Chrome's English — in the application,
+        // one layer above the code that knew perfectly well which failure it
+        // had hit. A browser reword would have turned a specific instruction
+        // back into a shrug, silently. The transport now tags the error and
+        // adviseOn() turns the tag into something to do; both are the SDK's, so
+        // every project on it gets the same answer.
+        //
+        // "Device" becomes "BP+" on the way out. The SDK serves more than this
+        // study and cannot assume the name; the operator only knows the one.
+        if (sdk && sdk.adviseOn) {
+          var advice = sdk.adviseOn(error);
+          if (advice) {
+            return advice.replace(/\bthe device\b/gi, function (found) {
+              return found.charAt(0) === 'T' ? 'The BP+' : 'the BP+';
+            });
+          }
         }
 
         return error.message;

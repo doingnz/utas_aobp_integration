@@ -34,7 +34,7 @@ import { Emitter } from './emitter.js';
 import { ByteStream, decodeLine } from './byte-stream.js';
 import { classify, isNotification, ResponseKind } from './responses.js';
 import { crc8 } from './crc8.js';
-import { BpPlusError, timeoutError, connectionError } from './errors.js';
+import { BpPlusError, timeoutError, connectionError, ErrorReason } from './errors.js';
 import { isFailureCode, ResultCode, describeMode } from '../constants.js';
 
 /** Default window for an explicitly armed stray failure. See expectStrayFailure. */
@@ -190,7 +190,8 @@ export class Session extends Emitter {
       }
     }).catch(err => {
       if (this._pending !== request) return;
-      this._settle(request, null, connectionError('Could not write to the device.', err));
+      this._settle(request, null, connectionError('Could not write to the device.', err,
+        this._transport.reason || ErrorReason.writeFailed));
     });
   }
 

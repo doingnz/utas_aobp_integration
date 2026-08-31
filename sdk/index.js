@@ -74,7 +74,10 @@ export { WebBluetoothTransport, BLE_PROFILES } from './transports/web-bluetooth.
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
-export { BpPlusError } from './core/errors.js';
+export { BpPlusError, ErrorReason } from './core/errors.js';
+
+// What to tell the person holding the device, as opposed to what to log.
+export { describeError, adviseOn } from './core/advice.js';
 
 // ── Protocol vocabulary ──────────────────────────────────────────────────────
 

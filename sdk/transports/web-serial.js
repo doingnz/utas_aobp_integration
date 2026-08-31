@@ -11,6 +11,7 @@
  */
 
 import { Transport } from './transport.js';
+import { connectionError, ErrorReason } from '../core/errors.js';
 
 export class WebSerialTransport extends Transport {
 
@@ -31,6 +32,7 @@ export class WebSerialTransport extends Transport {
     this._writer = null;
     this._readLoop = null;
     this._onUnplug = null;
+    this._unplugged = false;
   }
 
   static get isSupported() {
@@ -49,6 +51,8 @@ export class WebSerialTransport extends Transport {
     if (!WebSerialTransport.isSupported) {
       throw new Error('this browser has no Web Serial API');
     }
+
+    this._unplugged = false;
 
     // Must be called from a user gesture — the caller's click handler.
     this._port = await navigator.serial.requestPort(
@@ -96,7 +100,18 @@ export class WebSerialTransport extends Transport {
       });
 
       await settle(this._port.close(), 2000);
-      await this._port.open(settings);
+
+      try {
+        await this._port.open(settings);
+      } catch (retryErr) {
+        // Said here rather than left to a caller reading Chrome's wording: this
+        // one is not about the cable, and the answer is to find what else has
+        // the port. "Failed to open serial port." is the operating system
+        // refusing; "already open" is this page still holding it.
+        throw connectionError(
+          `Could not open the serial port: ${retryErr.message}`,
+          retryErr, ErrorReason.portBusy);
+      }
     }
 
     // A port whose cable has been pulled out of the computer is dead, and the
@@ -111,6 +126,7 @@ export class WebSerialTransport extends Transport {
       // event at itself, where there is nothing to match; both are wired, and
       // whichever arrives first wins, because _dropped() only fires once.
       if (event.port && event.port !== this._port) return;
+      this._unplugged = true;
       this._dropped('The USB cable was unplugged from the computer.');
     };
     navigator.serial.addEventListener('disconnect', this._onUnplug);

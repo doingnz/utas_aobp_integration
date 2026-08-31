@@ -434,6 +434,52 @@ console.log('\nan unanswered port is retried, not reopened');
     /if \(device && !device\.transport\.isConnected\) device = null;/.test(app));
 }
 
+// -- The SDK classifies, and says what to do -------------------------------
+// Table 5 gives every connection failure code 18, and 18 has to cover "another
+// program owns the port" and "the cuff end is out" — which want opposite
+// answers from a user. The layer that hits the failure is the only one that
+// knows which it was, so it says so, and the advice is keyed off that rather
+// than off the browser's phrasing.
+
+console.log('\nthe SDK classifies its own failures');
+
+{
+  const { adviseOn, describeError } = await import('../sdk/core/advice.js');
+  const { BpPlusError, ErrorReason, connectionError, timeoutError } =
+    await import('../sdk/core/errors.js');
+
+  const busy = connectionError('Could not open the serial port: whatever.',
+    null, ErrorReason.portBusy);
+  const gone = connectionError('Not connected over Web Serial.',
+    null, ErrorReason.unplugged);
+  const mute = timeoutError('f', 5000);
+
+  check('a busy port is told apart from a loose cable',
+    /in use by something else/.test(adviseOn(busy)) &&
+    /pushed all the way/.test(adviseOn(mute)));
+  check('an unplugged cable says so, rather than blaming the far end',
+    /unplugged from the computer/.test(adviseOn(gone)));
+  check('a timeout is tagged where it is thrown',
+    mute.reason === ErrorReason.noAnswer);
+  check('the advice names both ends of the cable',
+    /into the device and into the computer/.test(adviseOn(mute)));
+  check('and names no button, since it reaches connect and measure alike',
+    /switched on, then try again\./.test(adviseOn(mute)));
+
+  // Nothing to say is said as nothing, so a caller does not pad a specific
+  // failure with generic advice.
+  const kinked = new BpPlusError(11);
+  check('a device failure gets no cable advice', adviseOn(kinked) === null);
+  check('and describeError falls back to what the device said',
+    describeError(kinked) === kinked.message);
+
+  // The whole point: no message text is consulted anywhere in the mapping.
+  const advice = fs.readFileSync(new URL('../sdk/core/advice.js', import.meta.url), 'utf8');
+  check('the mapping never reads message text',
+    !/error\.message\s*\.\s*(match|includes|test)/.test(advice) &&
+    !/\.test\(error\.message\)/.test(advice));
+}
+
 // -- What the operator is told --------------------------------------------
 // The SDK's wording is for a log. "Could not write to the device." is accurate
 // and leaves a nurse with nothing to do; both ends of the cable are named,
@@ -444,20 +490,13 @@ console.log('\nerrors read as something to do');
 {
   const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
 
-  check('every connection failure gets cable advice, not just timeouts',
-    /error\.code === sdk\.ResultCode\.timeoutOrConnectionError\) \{/.test(app) &&
-    !app.includes('timeoutOrConnectionError &&'));
-  check('the advice names both ends of the cable',
-    /into the BP\+ and into the computer/.test(app));
-  check('and does not name a button, since it reaches Connect and Start alike',
-    /switched on, then try again\./.test(app));
-
-  // Both are code 18, and a port the OS would not hand over is not a cable
-  // problem, so it has to be recognised before the cable branch runs.
-  const openAt  = app.indexOf('failed to open serial port|port is already open');
-  const cableAt = app.indexOf('error.code === sdk.ResultCode.timeoutOrConnectionError)');
-  check('a port held by another program is told apart from a loose cable',
-    openAt > 0 && openAt < cableAt);
+  // The classification is the SDK's now. The application asks; it does not
+  // re-derive the answer from the browser's wording one layer up.
+  check('the page no longer reads the browser wording to classify a failure',
+    !app.includes('failed to open serial port|port is already open') &&
+    /sdk\.adviseOn\(error\)/.test(app));
+  check('and says BP+ where the SDK says device, capital included',
+    app.includes("'The BP+' : 'the BP+'"));
 
   // Losing the device mid-visit has to reach the screen on its own.
   check('a device that goes away puts Connect back',
