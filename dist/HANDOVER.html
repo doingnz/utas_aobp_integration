@@ -570,6 +570,61 @@
         </div>
       </div>
 
+      <div class="step">
+        <div class="stepnum">7</div>
+        <h3>What happens to the first file when a measurement is repeated?</h3>
+        <div class="step-body">
+          <p>
+            Take seated twice in the same instance — the second press says
+            <strong>Repeat Seated BP</strong>. Both attach to the same field, event and
+            instance, so the second has to do something with the first. The module logs
+            a doc id each time: <em>AOBP recording stored</em> in the project log.
+          </p>
+          <div class="outcome">
+            <span class="chip ok">expect</span>
+            <p>The field offers the <em>second</em> file, it downloads, and its digest
+              matches the marker. That is the important half: the numbers are also
+              overwritten by a repeat, so the file has to be the one that matches them.</p>
+            <span class="chip bad">the failure that matters</span>
+            <p>If <code>addFileToField()</code> refuses an occupied field rather than
+              replacing it, the second recording never lands and the record keeps a file
+              belonging to a discarded attempt. Worth knowing before it happens to a
+              participant.</p>
+          </div>
+          <p>
+            Then the housekeeping question. Note both doc ids from the log and ask your
+            administrator to run:
+          </p>
+          <pre>-- what the field points at now
+SELECT record, event_id, instance, value AS doc_id
+  FROM redcap_data                      -- REDCap 13+ may use redcap_data&lt;pid&gt;
+ WHERE project_id = &lt;pid&gt; AND field_name = 'seated_raw_xml';
+
+-- every edoc this project holds
+SELECT doc_id, doc_name, doc_size, stored_date, delete_date
+  FROM redcap_edocs_metadata
+ WHERE project_id = &lt;pid&gt;
+ ORDER BY doc_id DESC;</pre>
+          <div class="outcome">
+            <span class="chip warn">read it like this</span>
+            <p>If the first doc id has gone from the first query but still shows
+              <code>delete_date IS NULL</code> in the second, it is orphaned: the bytes
+              are on disk, referenced by nothing, and nothing will ever collect them.
+              REDCap's own deletion only sets <code>delete_date</code>, so an unmarked
+              unreferenced file stays for good.</p>
+          </div>
+          <p>
+            At 125 kB per discarded attempt this is housekeeping rather than
+            correctness, so we would rather measure it than write speculative cleanup.
+            If it does orphan, the fix is ours: read the existing doc id before
+            attaching and mark the old one deleted. There is no framework method for
+            that —
+            <a href="https://github.com/lsgs/redcap-copy-data-on-save">lsgs/redcap-copy-data-on-save</a>
+            does it with a direct <code>UPDATE</code>, and says so in a comment.
+          </p>
+        </div>
+      </div>
+
     </div>
   </section>
 
