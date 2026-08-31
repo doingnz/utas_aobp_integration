@@ -232,7 +232,7 @@ document.body.appendChild(hidden);
 window.AOBP_CONFIG = {
   record: document.getElementById('record').value,
   event_id: '1', repeat_instance: '1', pid: '0',
-  sdkUrl: new URL('../sdk/index.js?v=1.7.20', location.href).href,
+  sdkUrl: new URL('../sdk/index.js?v=1.7.21', location.href).href,
   saveXmlAsFile: true,    // posts to the EM stand-in at the foot of this page
   clockToleranceMinutes: 5,
   trace: true,
@@ -244,12 +244,12 @@ document.getElementById('record').addEventListener('input', function () {
 });
 </script>
 
-<script src="../js/aobp.js?v=1.7.20"></script>
+<script src="../js/aobp.js?v=1.7.21"></script>
 
 <script type="module">
-import * as sdk from '../sdk/index.js?v=1.7.20';
+import * as sdk from '../sdk/index.js?v=1.7.21';
 
-const BUILD = '1.7.20';
+const BUILD = '1.7.21';
 const BUILT = '2026-08-31';
 const $ = id => document.getElementById(id);
 
@@ -369,6 +369,12 @@ renderFields();
 
 <script>
 // ── The endpoint the module thinks it is talking to ────────────────────────
+// This block is a classic script, and the harness's own $() lives in the
+// module script above — module scope, invisible from here. Referencing it threw
+// inside ajax(), so every recording the module posted was lost to a
+// ReferenceError that looked exactly like a server refusing the upload.
+const emEl = id => document.getElementById(id);
+
 const EM_DB = 'aobp-harness-files';
 let emDb = null;
 
@@ -423,11 +429,11 @@ window.ExternalModules = {
     console.log('[EM stand-in] ' + action, { mode: payload.mode, bytes: payload.xml.length });
 
     if (action !== 'save-xml') return { status: 'error', message: 'Unknown action.' };
-    if (!$('em-enabled').checked) {
+    if (!emEl('em-enabled').checked) {
       return { status: 'error', message: 'Storing the XML as a file is not enabled for this project.' };
     }
-    if ($('em-fail').checked) {
-      $('em-fail').checked = false;      // one failure, so Resend can succeed
+    if (emEl('em-fail').checked) {
+      emEl('em-fail').checked = false;      // one failure, so Resend can succeed
       return { status: 'error', message: 'REDCap::saveFile did not store the file.' };
     }
     if (!payload.xml || !payload.xml.includes('<BPplus')) {
@@ -454,9 +460,9 @@ window.ExternalModules = {
 
 async function renderEmFiles() {
   const rows = await emAll();
-  $('em-empty').style.display = rows.length ? 'none' : '';
+  emEl('em-empty').style.display = rows.length ? 'none' : '';
 
-  $('em-files').querySelector('tbody').innerHTML = rows.map(row => {
+  emEl('em-files').querySelector('tbody').innerHTML = rows.map(row => {
     const url = URL.createObjectURL(new Blob([row.xml], { type: 'application/xml' }));
     return `<tr>
       <td>${row.record} · event ${row.event_id} · instance ${row.instance}</td>
@@ -471,7 +477,7 @@ async function renderEmFiles() {
   }).join('');
 }
 
-$('em-clear').addEventListener('click', async () => { await emClear(); renderEmFiles(); });
+emEl('em-clear').addEventListener('click', async () => { await emClear(); renderEmFiles(); });
 renderEmFiles();
 </script>
 

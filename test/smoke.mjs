@@ -572,6 +572,16 @@ console.log('\nthe recording is filed, not truncated');
   // No server on the demo host, so the harness answers the call itself.
   check('the harness stands in for the module endpoint',
     /window\.ExternalModules/.test(visit) && /save-xml/.test(visit));
+
+  // The stand-in is a classic script and the harness's own helpers live in a
+  // <script type="module"> — module scope, invisible from it. Calling one threw
+  // inside ajax(), so every recording the module posted was lost to a
+  // ReferenceError that looked exactly like a server refusing the upload, and
+  // the check above passed the whole time it was broken.
+  const standIn = visit.slice(visit.indexOf('const emEl ='));
+  check('and reaches for nothing the module script owns',
+    standIn.length > 100 && !standIn.includes('$('),
+    standIn.length > 100 ? 'uses $() from the module scope' : 'stand-in not found');
   check('and can be made to fail, so Resend has something to recover from',
     /em-fail/.test(visit));
   check('the harness posts for real, so the path is exercised',
