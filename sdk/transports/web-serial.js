@@ -102,9 +102,14 @@ export class WebSerialTransport extends Transport {
    * which is the right answer for a link being torn down.
    */
   async _close() {
-    // Cancel the reader first so the read loop ends before the port closes;
-    // closing underneath an active reader throws in some Chrome versions.
+    // Cancel the reader, then WAIT FOR THE READ LOOP TO END before letting go
+    // of the lock. cancel() only makes the pending read() resolve; the loop is
+    // still between that and its return, and releaseLock() on a stream the loop
+    // still holds throws — swallowed, leaving the lock held and port.close()
+    // waiting on it for ever. Measured as a second connect that met "the port
+    // is already open" instantly, because the first was never given back.
     await settle(this._reader && this._reader.cancel(), 1000);
+    await settle(this._readLoop, 1000);
     try { if (this._reader) this._reader.releaseLock(); } catch { /* already gone */ }
 
     await settle(this._writer && this._writer.abort(), 1000);
@@ -112,9 +117,10 @@ export class WebSerialTransport extends Transport {
 
     await settle(this._port && this._port.close(), 2000);
 
-    this._reader = null;
-    this._writer = null;
-    this._port   = null;
+    this._reader   = null;
+    this._writer   = null;
+    this._port     = null;
+    this._readLoop = null;
   }
 }
 

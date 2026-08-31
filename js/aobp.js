@@ -836,7 +836,15 @@
         // timed out, which is right for a log and useless to a nurse: the only
         // thing she can act on is the cable. Most often it is not plugged into
         // the BP+ at all, or the BP+ is off.
-        if (sdk && error.code === sdk.ResultCode.timeoutOrConnectionError) {
+        //
+        // Only a timeout, though. timeoutError() and connectionError() share
+        // one Table 5 code — 18 covers both "we could not ask" and "it did not
+        // answer" — so matching on the code alone replaced every connection
+        // failure with cable advice, including "the port is already open",
+        // which is not about the cable and needs its own answer. `command` is
+        // what separates them: a timeout knows what it was waiting for.
+        if (sdk && error.code === sdk.ResultCode.timeoutOrConnectionError &&
+            error.command) {
           return 'Could not connect to the BP+. Check the cable is pushed all ' +
                  'the way into the BP+ and that the device is switched on, ' +
                  'then press Connect BP+ again.';

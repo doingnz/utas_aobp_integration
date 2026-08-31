@@ -378,6 +378,33 @@ console.log('\nteardown is deadlined');
   try { await settle(Promise.reject(new Error('port gone')), 500); }
   catch { rejectedHandled = false; }
   check('a step that throws is swallowed, not rethrown', rejectedHandled);
+
+  // Ordering matters: cancel() only makes the pending read() resolve, so the
+  // loop is still running when releaseLock() would be called.
+  const cancelAt = src.indexOf('this._reader.cancel()');
+  const loopAt   = src.indexOf('settle(this._readLoop');
+  const freeAt   = src.indexOf('this._reader.releaseLock()');
+  check('the read loop is awaited between cancel and releaseLock',
+    cancelAt > 0 && loopAt > cancelAt && freeAt > loopAt);
+}
+
+// ── Cable advice belongs only to a timeout ───────────────────────────────────
+// timeoutError() and connectionError() share Table 5 code 18, so matching on the
+// code alone replaced every connection failure with cable advice — including
+// "the port is already open", which is not about the cable.
+
+console.log('\ncode 18 covers two different failures');
+
+{
+  const { timeoutError, connectionError } = await import('../sdk/core/errors.js');
+  const t = timeoutError('f', 5000);
+  const c = connectionError('Could not connect over Web Serial: the port is already open');
+
+  check('both carry the same result code', t.code === c.code);
+  check('only the timeout names the command it waited for',
+    t.command === 'f' && c.command === undefined);
+  check('the connection error keeps its own message',
+    /already open/.test(c.message));
 }
 
 // ── A measurement started on the device is refused ───────────────────────────
