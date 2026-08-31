@@ -232,11 +232,10 @@ document.body.appendChild(hidden);
 window.AOBP_CONFIG = {
   record: document.getElementById('record').value,
   event_id: '1', repeat_instance: '1', pid: '0',
-  sdkUrl: new URL('../sdk/index.js?v=1.7.21', location.href).href,
+  sdkUrl: new URL('../sdk/index.js?v=1.7.22', location.href).href,
   saveXmlAsFile: true,    // posts to the EM stand-in at the foot of this page
   clockToleranceMinutes: 5,
   trace: true,
-  autoAdvanceStanding: false,
   detailedWarnings: false,   // matches the module default: nothing to act on
 };
 document.getElementById('record').addEventListener('input', function () {
@@ -244,12 +243,12 @@ document.getElementById('record').addEventListener('input', function () {
 });
 </script>
 
-<script src="../js/aobp.js?v=1.7.21"></script>
+<script src="../js/aobp.js?v=1.7.22"></script>
 
 <script type="module">
-import * as sdk from '../sdk/index.js?v=1.7.21';
+import * as sdk from '../sdk/index.js?v=1.7.22';
 
-const BUILD = '1.7.21';
+const BUILD = '1.7.22';
 const BUILT = '2026-08-31';
 const $ = id => document.getElementById(id);
 

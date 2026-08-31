@@ -30,17 +30,6 @@
       "required": false
     },
     {
-      "key": "aobp-auto-advance-standing",
-      "name": "After the seated measurement, start the standing one automatically on a timer (otherwise the operator presses Start standing when the participant is ready)",
-      "type": "checkbox"
-    },
-    {
-      "key": "aobp-auto-advance-seconds",
-      "name": "Seconds to wait before the automatic standing measurement (blank = 3)",
-      "type": "text",
-      "required": false
-    },
-    {
       "key": "aobp-show-recovered-warnings",
       "name": "Show warnings on measurements that succeeded (the device retried and recovered). Off by default: they are recorded either way, and there is nothing for clinic staff to act on",
       "type": "checkbox"

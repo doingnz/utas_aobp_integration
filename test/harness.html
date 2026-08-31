@@ -145,9 +145,6 @@
          aobp_integration_v1.0.1 does: standing follows seated on a timer. The
          module's own default is OFF, so this is the harness deliberately opting
          into the original behaviour rather than the module's. -->
-    <label for="auto-advance-cb" style="display:flex;align-items:center;gap:6px;cursor:pointer">
-      <input type="checkbox" id="auto-advance-cb" checked> Auto advance
-    </label>
 
   </div>
 
@@ -284,12 +281,10 @@ window.AOBP_CONFIG = {
   event_id: '1',
   repeat_instance: '1',
   pid: '0',
-  sdkUrl: new URL('../sdk/index.js?v=1.7.21', location.href).href,
+  sdkUrl: new URL('../sdk/index.js?v=1.7.22', location.href).href,
   saveXmlAsFile: false,          // no server here to receive it
   clockToleranceMinutes: 5,
   trace: true,
-  autoAdvanceStanding: true,   // matches v1.0.1; the module's own default is false
-  autoAdvanceSeconds: 3,
   detailedWarnings: false,   // matches the module default: nothing to act on
 };
 document.getElementById('tolerance').addEventListener('input', function () {
@@ -302,7 +297,7 @@ document.getElementById('record').addEventListener('input', function () {
 
 <!-- ?v= must match BUILD in the module script below. A query string is the only
      reliable way to force a tablet past a cached copy of the module. -->
-<script src="../js/aobp.js?v=1.7.21"></script>
+<script src="../js/aobp.js?v=1.7.22"></script>
 
 <script type="module">
 import * as sdk from '../sdk/index.js';
@@ -312,7 +307,7 @@ const $ = id => document.getElementById(id);
 // ── Build stamp ────────────────────────────────────────────────────────────
 // Bump this on every upload, and keep the ?v= on the aobp.js script tag and on
 // AOBP_CONFIG.sdkUrl in step with it.
-const BUILD = '1.7.21';
+const BUILD = '1.7.22';
 const BUILT = '2026-08-31';
 
 (function showBuild() {
@@ -441,10 +436,6 @@ $('detailed-warnings-cb').addEventListener('change', function () {
   console.log('[harness] detailedWarnings = ' + this.checked);
 });
 
-$('auto-advance-cb').addEventListener('change', function () {
-  window.AOBP_CONFIG.autoAdvanceStanding = this.checked;
-  console.log('[harness] autoAdvanceStanding = ' + this.checked);
-});
 
 $('standing-required-cb').addEventListener('change', function () {
   $('sys_standing_required').value = this.checked ? '1' : '0';

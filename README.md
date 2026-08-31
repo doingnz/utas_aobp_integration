@@ -152,9 +152,10 @@ and fills these fields:
 | Signal-to-noise ratio | `seated_snr` | `standing_snr` |
 | Raw XML | `seated_raw_xml_text` | `standing_raw_xml_text` |
 
-Two control fields: `sys_standing_required` — set to `1` to ask for a standing
-measurement after the seated one — and `sys_measurement_status`, which the module
-sets to `complete` when the visit is done.
+One control field: `sys_standing_required` — set to `1` to ask for a standing
+measurement after the seated one. Completion is not written by the module; the
+dictionary derives it with the `sys_measurement_complete` calc, from the readings
+themselves, so there is one answer rather than two that can disagree.
 
 `seated_af` and `standing_af` are radios, so the module clicks the option
 (`opt-<field>_1` / `_0`) rather than setting a value. That is the only way REDCap
@@ -207,12 +208,14 @@ See also task 25 in the BP+ knowledge base, which is the firmware side of this.
 
 Connect, then **Start seated**. If `sys_standing_required` is `1` the module
 stops and asks for the participant to be stood up; **Start standing** takes the
-second measurement when the operator is ready. Nothing runs on a timer unless
-the project turns on **auto advance** (see *Project settings*), which starts the
-standing measurement itself after a fixed wait.
+second measurement when the operator is ready. **Nothing runs on a timer.** A
+timed advance existed until 2026-09-01, inherited from v1.0.1: the cuff inflated
+three seconds after the seated measurement whether or not the participant was
+upright and settled. A measurement that starts before the person is standing is
+not a standing measurement, and nobody at the study knew the timer was there.
 
-Completing a visit does not lock the buttons. `sys_measurement_status` is set to
-`complete`, but **Start seated** and **Start standing** stay live so a reading
+Completing a visit does not lock the buttons. **Start seated** and
+**Start standing** stay live so a reading
 that succeeded and is nevertheless unusable — the participant moved, the cuff
 slipped — can be taken again without reloading the page. A repeat replaces the
 stored reading for that position. Only a measurement actually in progress takes

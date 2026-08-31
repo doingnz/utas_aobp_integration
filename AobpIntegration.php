@@ -134,20 +134,6 @@ class AobpIntegration extends AbstractExternalModule
      * wrong mislabels data permanently. Blank or nonsense falls back to five
      * minutes rather than to no checking at all.
      */
-    /**
-     * How long the auto-advance waits before the standing measurement.
-     *
-     * Only consulted when aobp-auto-advance-standing is on. The original
-     * module's fixed 3 s is the default.
-     */
-    private function autoAdvanceSeconds(): float
-    {
-        $configured = trim((string) $this->getProjectSetting('aobp-auto-advance-seconds'));
-        if ($configured === '' || !is_numeric($configured) || (float) $configured < 0) {
-            return 3.0;
-        }
-        return (float) $configured;
-    }
 
     private function clockToleranceMinutes(): float
     {
@@ -188,8 +174,6 @@ class AobpIntegration extends AbstractExternalModule
             'saveXmlAsFile'   => (bool) $this->getProjectSetting('aobp-save-xml-file'),
             'clockToleranceMinutes' => $this->clockToleranceMinutes(),
             'trace'           => (bool) $this->getProjectSetting('aobp-trace'),
-            'autoAdvanceStanding' => (bool) $this->getProjectSetting('aobp-auto-advance-standing'),
-            'autoAdvanceSeconds'  => $this->autoAdvanceSeconds(),
             // Default OFF. The TM2917 retries a determination it could not
             // measure and reports the attempt it discarded even when a later
             // one succeeded, so this fires over good readings with nothing for

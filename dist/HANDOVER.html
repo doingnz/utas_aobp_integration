@@ -365,11 +365,6 @@
             <td>Default. The device retries and recovers on its own; those warnings
                 fire over good readings with nothing to act on</td>
           </tr>
-          <tr>
-            <td>Start the standing measurement automatically</td>
-            <td>off</td>
-            <td>Default. The operator presses Start when the participant is ready</td>
-          </tr>
         </tbody>
       </table>
     </div>
@@ -594,8 +589,8 @@
   <section>
     <h2>Fields the module writes that the instrument doesn't have</h2>
     <p>
-      Three, all of which need a decision rather than a fix. The module writes them and
-      logs a console warning when the field is absent; nothing breaks.
+      Two, and they need a decision rather than a fix. The module writes them and logs
+      a console warning when the field is absent; nothing breaks.
     </p>
     <div class="table-wrap">
       <table>
@@ -608,51 +603,49 @@
               number that separates a clean measurement from a marginal one, and the
               context is otherwise lost when the XML leaves the page</td>
           </tr>
-          <tr>
-            <td class="mono">sys_measurement_status</td>
-            <td>A short status string the module has always written</td>
-            <td>The dictionary has <code>sys_measurement_complete</code>, a calc field,
-              which is not the same thing. Add the field, or tell us to stop writing it</td>
-          </tr>
         </tbody>
       </table>
     </div>
   </section>
 
   <section>
-    <h2>Still open</h2>
+    <h2>Decided, 1 September</h2>
+    <p>
+      Four questions from the earlier list, settled with Richard. Three are now the
+      module's behaviour; one removed a feature.
+    </p>
     <div class="panel">
       <div class="q">
-        <h3>Should a failed measurement end the visit?</h3>
+        <h3>Failed measurements are not recorded as failures</h3>
         <p>
-          At present it does not — the buttons stay live and the operator can repeat.
-          A failure that must be recorded as a failure is a different design, and it is
-          your call which one the study wants.
+          The operator can simply try again, and the buttons stay live. The study does
+          not want a stored record of an attempt that produced nothing, and the flexible
+          version is the one that is easy to explain to clinic staff.
         </p>
       </div>
       <div class="q">
-        <h3>The three-second auto-advance to standing is off</h3>
+        <h3>The three-second auto-advance is gone</h3>
         <p>
-          It is still in the module behind a project setting. We turned it off because a
-          timer that starts a measurement while the participant is still standing up
-          produces a reading nobody asked for, but it is one checkbox to restore.
+          Removed from the module, its two project settings, the harnesses and the
+          README — not left behind a checkbox. It came from v1.0.1 and inflated the cuff
+          three seconds after the seated measurement whether or not the participant was
+          upright. A measurement that starts before the person is standing is not a
+          standing measurement.
         </p>
       </div>
       <div class="q">
-        <h3>Measurements started on the device are cancelled</h3>
+        <h3>Measurements started on the device stay cancelled</h3>
         <p>
-          A measurement begun with the BP+'s own Start button carries no patient ID and
-          belongs to no record, but the device stores it anyway. The page stops it and
-          tells the operator to use the page instead. Say if that is too strict.
+          Confirmed as correct. One begun with the BP+'s own Start button carries no
+          patient ID and belongs to no record, though the device stores it anyway.
         </p>
       </div>
       <div class="q">
-        <h3>Android tablets need the Prolific cable</h3>
+        <h3>Completion comes from the calc field</h3>
         <p>
-          On Android the BP+ is reached over WebUSB, which drives the adapter chip
-          directly, and the module ships one driver — Prolific PL2303. On a desktop the
-          operating system supplies the driver and any adapter works. Worth knowing
-          before a site buys cables.
+          The module no longer writes <code>sys_measurement_status</code>.
+          <code>sys_measurement_complete</code> derives completion from the readings
+          themselves, so there is one answer instead of two that can disagree.
         </p>
       </div>
     </div>

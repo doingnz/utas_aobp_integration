@@ -97,7 +97,6 @@ if (!JSDOM) {
     <div id="seated-results-panel"></div>
     <div id="standing-results-panel"></div>
     <input type="hidden" name="sys_standing_required" value="0">
-    <input type="hidden" name="sys_measurement_status" value="">
   </body></html>`;
 
   const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true });

@@ -52,7 +52,6 @@
   var THIS_SCRIPT = document.currentScript ? document.currentScript.src : '';
 
   var FIELD_NAMES = {
-    measurement_status: 'sys_measurement_status',
     standing_required:  'sys_standing_required',
 
     seated: {
@@ -1184,35 +1183,17 @@
 
       if (mode === 'seated') seatedDone = true; else standingDone = true;
 
+      // The operator decides when. There was a timed alternative here, taken
+      // from v1.0.1 — the cuff inflating a fixed three seconds after the seated
+      // measurement, whether or not the participant was upright and settled.
+      // Removed on 2026-09-01: nobody at the study knew it existed, and a
+      // measurement that starts before the person is standing is not a standing
+      // measurement.
       if (mode === 'seated' && standingRequired() && !standingDone) {
-        var cfg = window.AOBP_CONFIG || {};
-
-        // Two flows, because the original module and this one disagree about
-        // which is right and the study has not yet decided.
-        //
-        //   autoAdvanceStanding on   the standing measurement follows on a
-        //                            timer, as aobp_integration_v1.0.1 does.
-        //   off (default)            the module stops and waits for the
-        //                            operator to press Start standing.
-        //
-        // The timer is the riskier of the two: the cuff inflates when it
-        // expires whether or not the participant is upright and settled. It is
-        // off unless a project asks for it.
-        if (cfg.autoAdvanceStanding) {
-          var seconds = autoAdvanceSeconds(cfg);
-          setStatus('normal',
-            'Seated done. Please stand the participant — the standing ' +
-            'measurement starts in ' + seconds + ' seconds.');
-          await delay(seconds * 1000);
-
-          if (!(await runMeasurement('standing'))) return;
-          standingDone = true;
-        } else {
-          setStatus('normal',
-            'Seated done. Stand the participant, then press Start standing.');
-          updateButtons();
-          return;                             // the operator decides when
-        }
+        setStatus('normal',
+          'Seated done. Stand the participant, then press Start standing.');
+        updateButtons();
+        return;
       }
 
       finish(mode);
@@ -1237,7 +1218,10 @@
      */
     function finish(lastMode) {
       if (visitComplete()) {
-        setFieldValue(FIELD_NAMES.measurement_status, 'complete');
+        // No status field written. The dictionary derives completion with the
+        // sys_measurement_complete calc, from the readings themselves — one
+        // answer, which cannot drift out of step with the data the way a
+        // separately-written flag can.
         measurementComplete = true;
         setStatus('success',
           standingDone ? 'Seated and standing assessment complete.'
@@ -1586,12 +1570,6 @@
       if (a < b) return false;
     }
     return true;
-  }
-
-  /** How long the auto-advance waits. v1.0.1's fixed 3 s is the default. */
-  function autoAdvanceSeconds(cfg) {
-    var seconds = Number(cfg.autoAdvanceSeconds);
-    return isFinite(seconds) && seconds >= 0 ? seconds : 3;
   }
 
   function escapeHtml(value) {
