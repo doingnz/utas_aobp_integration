@@ -10,7 +10,7 @@
  * devices come up at 9600 and need `b 115200` sent at 9600 first).
  */
 
-import { Transport } from './transport.js';
+import { Transport, TransportState } from './transport.js';
 
 export class WebSerialTransport extends Transport {
 
@@ -30,6 +30,7 @@ export class WebSerialTransport extends Transport {
     this._reader = null;
     this._writer = null;
     this._readLoop = null;
+    this._onUnplug = null;
   }
 
   static get isSupported() {
@@ -98,6 +99,17 @@ export class WebSerialTransport extends Transport {
       await this._port.open(settings);
     }
 
+    // A port whose cable has been pulled out of the computer is dead, and the
+    // SerialPort object does not say so on its own. Callers that hold an open
+    // port across a failure — to retry on it rather than reopen it — would
+    // otherwise retry for ever against a device that is no longer there.
+    this._onUnplug = (event) => {
+      if (event.target !== this._port) return;
+      this.emit('warning', { message: 'The USB cable was unplugged from the computer.' });
+      this._setState(TransportState.disconnected);
+    };
+    navigator.serial.addEventListener('disconnect', this._onUnplug);
+
     this._reader = this._port.readable.getReader();
     this._writer = this._port.writable.getWriter();
 
@@ -138,6 +150,11 @@ export class WebSerialTransport extends Transport {
    * which is the right answer for a link being torn down.
    */
   async _close() {
+    if (this._onUnplug) {
+      navigator.serial.removeEventListener('disconnect', this._onUnplug);
+      this._onUnplug = null;
+    }
+
     // Cancel the reader, then WAIT FOR THE READ LOOP TO END before letting go
     // of the lock. cancel() only makes the pending read() resolve; the loop is
     // still between that and its return, and releaseLock() on a stream the loop

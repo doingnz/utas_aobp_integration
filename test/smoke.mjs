@@ -401,6 +401,38 @@ console.log('\nteardown is deadlined');
     heldAt > 0 && heldAt < openAt);
 }
 
+// ── A port that opened but did not answer is kept ────────────────────────
+// The cable not being in the BP+ says nothing about the port, which opened
+// perfectly. Closing it to try again costs the operator the browser's picker,
+// and asks close() to drain a write that hardware flow control will not let go.
+
+console.log('\nan unanswered port is retried, not reopened');
+
+{
+  const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+  const trans = fs.readFileSync(new URL('../sdk/transports/web-serial.js', import.meta.url), 'utf8');
+
+  check('the capability check no longer tears the port down',
+    !/device\.disconnect\(\)\.catch/.test(app));
+  check('verification is separable from opening',
+    /async function verify\(\)/.test(app) && /await verify\(\);/.test(app));
+  check('a second press retries rather than reopening',
+    /if \(retrying\) await verify\(\);/.test(app));
+
+  // Otherwise the operator gets live Start buttons for a port with nothing
+  // proven on the end of it.
+  check('an unverified device does not arm the Start buttons',
+    /var ready = !!device && !!features && !busy;/.test(app));
+
+  // A cable pulled out of the computer kills the port. Retrying on it for ever
+  // would be the cost of keeping it.
+  check('an unplugged cable invalidates the port',
+    /addEventListener\('disconnect'/.test(trans) &&
+    /removeEventListener\('disconnect'/.test(trans));
+  check('and the page then falls back to a fresh port',
+    /if \(device && !device\.transport\.isConnected\) device = null;/.test(app));
+}
+
 // ── settle() can rethrow when the caller needs to know ──────────────────────
 // Teardown steps are best-effort, but the port close is not: a port left open
 // makes the next connect impossible, so that one failure has to surface.

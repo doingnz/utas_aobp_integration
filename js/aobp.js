@@ -341,50 +341,43 @@
       });
 
       await device.connect();
+      await verify();
+    }
+
+    /**
+     * Ask the open port whether a BP+ is on the end of it.
+     *
+     * Split from connect() because it is the half that fails when the cable is
+     * not in the BP+, and the half worth retrying on its own. The port opened
+     * fine; nothing about it is wrong. Retrying here costs the operator one
+     * press, where reopening costs them the browser's port picker as well.
+     */
+    async function verify() {
       setStatus('normal', 'Checking the BP+ — please wait…', 'all');
 
-      // Everything from here can fail, and the port is already open. A failure
-      // has to give it back: a serial port this page still holds cannot be
-      // opened again, so without this the operator's second attempt meets "the
-      // port is already open" and a page reload is the only way out.
-      try {
-        // device.connect() only opens the port — it sends nothing and waits for
-        // nothing. The feature list is the first thing the device actually
-        // says, so it is what proves a BP+ is on the other end at all.
-        //
-        // Every BP+ answers `f`; silence means the port opened onto something
-        // that is not a BP+ — the wrong COM port, or a cable with nothing on
-        // the end. Reporting that as a connection would hand the operator a
-        // green status line and two live buttons attached to nothing.
-        features = await device.readFeatures();
+      // device.connect() only opens the port — it sends nothing and waits for
+      // nothing. The feature list is the first thing the device actually
+      // says, so it is what proves a BP+ is on the other end at all.
+      //
+      // Every BP+ answers `f`; silence means the port opened onto something
+      // that is not a BP+ — the wrong COM port, or a cable with nothing on
+      // the end. Reporting that as a connection would hand the operator a
+      // green status line and two live buttons attached to nothing.
+      features = await device.readFeatures();
 
-        apiVersion = await device.readApiVersion().catch(function (error) {
-          console.warn('[AOBP] no Terminal API version:', error.message);
-          return null;
-        });
+      apiVersion = await device.readApiVersion().catch(function (error) {
+        console.warn('[AOBP] no Terminal API version:', error.message);
+        return null;
+      });
 
-        console.log('[AOBP] device ' + features.deviceId +
-                    ', firmware ' + features.softwareVersion +
-                    ', feature list ' + features.version +
-                    ', Terminal API ' + (apiVersion || 'unknown') +
-                    ', mode ' + features.measureModeInfo.label);
+      console.log('[AOBP] device ' + features.deviceId +
+                  ', firmware ' + features.softwareVersion +
+                  ', feature list ' + features.version +
+                  ', Terminal API ' + (apiVersion || 'unknown') +
+                  ', mode ' + features.measureModeInfo.label);
 
-        var shortfall = capabilityShortfall(features, apiVersion);
-        if (shortfall) throw new Error(shortfall);
-      } catch (error) {
-        // Bounded, and the result ignored. The operator is owed the reason this
-        // failed; giving the port back matters, but not enough to wait on. The
-        // SDK deadlines its own teardown — this is here so that a future change
-        // to it cannot leave a nurse looking at a frozen page.
-        await Promise.race([
-          device.disconnect().catch(function () { /* already gone */ }),
-          new Promise(function (resolve) { setTimeout(resolve, 4000); }),
-        ]);
-
-        device = null;
-        features = null;
-        throw error;
-      }
+      var shortfall = capabilityShortfall(features, apiVersion);
+      if (shortfall) throw new Error(shortfall);
     }
 
     /**
@@ -911,23 +904,44 @@
       once(button, async function () {
         currentMode = mode;
 
-        if (device) {
+        if (device && features) {
           setStatus('success', 'BP+ already connected.', mode);
           hideConnectButtons();
           updateButtons();
           return;
         }
 
+        // A port that opened but did not answer is kept, not given back.
+        //
+        // The usual reason it did not answer is that the cable is not in the
+        // BP+ yet, and nothing is wrong with the port at all — so the second
+        // press plugs the cable in and asks again, with no browser picker in
+        // the way. It also steps around a port that will not close: with
+        // hardware flow control and no CTS the write to `f` never drains, and
+        // close() waits on bytes that cannot leave. The port we could not shut
+        // is the one we now keep, which suits both.
+        //
+        // To pick a different port, reload the page.
+        var retrying = !!device && device.transport.isConnected;
+
         setEnabled(button, false);
-        setStatus('normal', 'Select the BP+ serial port…', mode);
+        setStatus('normal', retrying
+          ? 'Checking the BP+ — please wait…'
+          : 'Select the BP+ serial port…', mode);
         try {
-          await connect();
+          if (retrying) await verify();
+          else await connect();
           setStatus('success', 'BP+ connected' +
             (deviceIsAobp() ? '' : ' — the device is NOT in AOBP mode'), 'all');
           hideConnectButtons();
           updateButtons();
         } catch (error) {
-          device = null;
+          // The device object survives only while its port does. Chrome fires
+          // `disconnect` when the cable leaves the computer, and the transport
+          // marks itself disconnected on it, so an unplugged cable falls back
+          // to a fresh port and the picker rather than retrying into nothing.
+          if (device && !device.transport.isConnected) device = null;
+          features = null;
           setEnabled(button, true);
           setStatus('error', describe(error), mode);
           console.error('[AOBP]', error);
@@ -1116,7 +1130,11 @@
       // participant moved, the cuff slipped, the arm was talking — has to be
       // repeatable without reloading the page. `busy` is the only thing that
       // takes a control away.
-      var ready = !!device && !busy;
+      //
+      // `features`, not just `device`: a port that opened but has not yet
+      // answered `f` leaves a device object with nothing proven on the end of
+      // it, and the operator must not be handed live Start buttons for it.
+      var ready = !!device && !!features && !busy;
 
       setEnabled(ui.seated,   ready);
       setEnabled(ui.standing, ready);
