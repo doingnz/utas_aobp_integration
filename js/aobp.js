@@ -1166,7 +1166,13 @@
       setEnabled(ui.standing, ready);
       for (var mode in blocks) {
         setEnabled(blocks[mode].cancel, !!device && busy);
-        setEnabled(blocks[mode].repeat, ready && hasReading(mode));
+        // Shown as well as enabled: the instrument ships this button hidden,
+        // and until now nothing ever revealed it, so Repeat Measurement could
+        // not be reached in REDCap at all. It appears once that position has a
+        // reading to repeat.
+        var canRepeat = ready && hasReading(mode);
+        setEnabled(blocks[mode].repeat, canRepeat);
+        setShown(blocks[mode].repeat, canRepeat);
       }
       setEnabled(ui.setAobp,  ready && canSetAobpMode());
       setEnabled(ui.ping,     ready);
@@ -1369,6 +1375,18 @@
 
   function setEnabled(button, enabled) {
     if (button) button.disabled = !enabled;
+  }
+
+  /**
+   * Show or hide a control the instrument ships hidden.
+   *
+   * The dictionary gives Repeat Measurement an inline `display: none`, so
+   * enabling it achieves nothing an operator can see — a disabled button and an
+   * invisible one look identical from the chair. Setting display to '' hands it
+   * back to the stylesheet, which is right whether or not it started hidden.
+   */
+  function setShown(element, shown) {
+    if (element) element.style.display = shown ? '' : 'none';
   }
 
   function delay(ms) {

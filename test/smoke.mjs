@@ -461,6 +461,16 @@ console.log('\nerrors read as something to do');
   // Losing the device mid-visit has to reach the screen on its own.
   check('a device that goes away puts Connect back',
     /device\.on\('state'/.test(app) && /function showConnectButtons/.test(app));
+
+  // The dictionary ships Repeat Measurement with an inline display:none, so
+  // enabling it changes nothing an operator can see. A disabled button and an
+  // invisible one are the same button from the chair.
+  check('Repeat is revealed, not just enabled',
+    /setShown\(blocks\[mode\]\.repeat, canRepeat\)/.test(app));
+
+  const visit = fs.readFileSync(new URL('harness-visit.html', import.meta.url), 'utf8');
+  check('and the stand-in ships it hidden, as the instrument does',
+    (visit.match(/id="repeat-btn-(seated|standing)"[^>]*display:none/g) || []).length === 2);
 }
 
 // ── settle() can rethrow when the caller needs to know ──────────────────────
