@@ -506,6 +506,16 @@
               — so a record never reads as a measurement that produced no recording when
               in fact one was lost.</p>
           </div>
+          <p>
+            <strong>If you ever turn file storage off</strong>, this field holds XML
+            again rather than a marker — but reduced, not truncated. A text field holds
+            65,535 bytes and an AOBP result is twice that, so the module strips the
+            waveform arrays and keeps everything else: all 37 derived values with the
+            algorithm revision that produced them, both average pulses, MeasDataLogger
+            entire, and every determination's readings. 105 kB becomes 17 kB. Worth
+            knowing so a field full of XML is not mistaken for the marker having
+            failed.
+          </p>
         </div>
       </div>
 
