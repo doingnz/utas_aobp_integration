@@ -764,11 +764,6 @@
       // when it is close to a size a text field will truncate.
       if (fields.xml) {
         var xml = measurement.xml || '';
-        if (xml.length > 60000) {
-          console.warn('[AOBP] the result XML is ' + xml.length +
-                       ' characters; a REDCap text field will not hold it. ' +
-                       'Store it as a file instead (see README).');
-        }
 
         // Only where there is nowhere better to put it.
         //
@@ -782,7 +777,24 @@
         // With file storage off, this field is the only place the recording can
         // go, truncation and all.
         if (!(window.AOBP_CONFIG || {}).saveXmlAsFile) {
-          setFieldValue(fields.xml, xml);
+          // Stripped, because whole will not fit. A REDCap text field holds
+          // 65,535 bytes and an AOBP result is twice that, so the choice here
+          // is not between whole and stripped — it is between stripped and
+          // truncated, and a document cut off mid-element is worth nothing.
+          //
+          // What goes is the bulk: the derived Results, which recompute from
+          // MeasDataLogger, and each determination's raw cuff waveform. What
+          // stays is what nothing else can reconstruct. Measured at 13 kB
+          // against 105 kB on a real standing AOBP.
+          var stored = sdk && sdk.minimalXml ? sdk.minimalXml(xml) : xml;
+
+          if (stored.length > 60000) {
+            console.warn('[AOBP] even the reduced XML is ' + stored.length +
+                         ' characters; a REDCap text field will not hold it. ' +
+                         'Turn on "Store the raw measurement XML as a file".');
+          }
+
+          setFieldValue(fields.xml, stored);
         }
       }
 

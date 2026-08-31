@@ -682,3 +682,51 @@ export function alertsOf(result, bpRange = null) {
 
   return [...byMessage.values()];
 }
+
+/**
+ * Elements the minimal XML drops, and why each is safe to lose.
+ *
+ * `RawPressureWave`   the cuff waveform for one determination, ~26 kB of it.
+ * `NibpDetailedData`  the module's own working, for support rather than research.
+ * `Results`           every derived central value, ~47 kB. Recomputable from
+ *                     MeasDataLogger, which is what produced them.
+ *
+ * What stays is the part nothing else can reconstruct: MeasDataLogger with its
+ * suprasystolic and cuff pressure recordings, and each NibpBloodPressure with
+ * the Sys/Dia/Map/Pr that went into the average, its timestamp, its alert and
+ * its motion flag. On a real standing AOBP that is 13 kB where the whole file
+ * is 105 kB.
+ */
+const BULK_ELEMENTS = ['Results', 'RawPressureWave', 'NibpDetailedData'];
+
+/**
+ * The measurement XML with the bulk recordings removed.
+ *
+ * For somewhere that cannot hold the whole thing — a REDCap text field is
+ * 65,535 bytes and an AOBP result is twice that — and where a truncated
+ * document would be worse than a smaller complete one. Prefer storing the file
+ * whole wherever that is possible; this is the fallback, not the default.
+ *
+ * Returns the input unchanged if it cannot be parsed, on the grounds that
+ * handing back something smaller and wrong is the one outcome worth avoiding.
+ *
+ * @param {string} xml
+ * @returns {string}
+ */
+export function minimalXml(xml) {
+  if (!xml || typeof DOMParser === 'undefined') return xml;
+
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  if (doc.getElementsByTagName('parsererror').length) return xml;
+
+  for (const tag of BULK_ELEMENTS) {
+    const found = doc.getElementsByTagName(tag);
+    // Backwards: getElementsByTagName is live, and removing from the front
+    // reindexes everything still to be removed.
+    for (let i = found.length - 1; i >= 0; i--) {
+      if (found[i].parentNode) found[i].parentNode.removeChild(found[i]);
+    }
+  }
+
+  return new XMLSerializer().serializeToString(doc);
+}

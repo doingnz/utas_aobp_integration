@@ -539,6 +539,58 @@ console.log('\na cancel says who asked for it');
     JSON.stringify({ code: deviceCancel?.code, reason: deviceCancel?.reason }));
 }
 
+// -- The XML, cut down to something a text field can hold -----------------
+// Only for a project with file storage off. A REDCap text field holds 65,535
+// bytes and an AOBP result is twice that, so the choice is between stripped and
+// truncated — and a document cut off mid-element is worth nothing.
+
+console.log('\nthe XML reduces to what cannot be recomputed');
+
+{
+  const { minimalXml } = await import('../sdk/device/measurement.js');
+
+  // The SDK parses with the DOM the page gives it. Node has none, so minimalXml
+  // hands the input straight back — correct behaviour, and it would pass every
+  // check below by doing nothing. jsdom supplies the real thing.
+  if (JSDOM) {
+    const w = new JSDOM('').window;
+    globalThis.DOMParser = w.DOMParser;
+    globalThis.XMLSerializer = w.XMLSerializer;
+  }
+
+  // A stand-in with the same shape as a real result: the bulk elements around
+  // the parts that have to survive.
+  const xml =
+    '<BPplus version="7.0"><MeasDataLogger><Sys>128</Sys>' +
+    '<RawSuprasystolicPressure>AAAA</RawSuprasystolicPressure>' +
+    '<RawCuffPPressure>BBBB</RawCuffPPressure><NibpBloodPressures>' +
+    '<NibpBloodPressure><Sys>126</Sys><Dia>78</Dia><Alert>x</Alert>' +
+    '<RawPressureWave>' + 'Z'.repeat(4000) + '</RawPressureWave>' +
+    '<NibpDetailedData>detail</NibpDetailedData></NibpBloodPressure>' +
+    '<NibpBloodPressure><Sys>130</Sys><Dia>80</Dia>' +
+    '<RawPressureWave>' + 'Y'.repeat(4000) + '</RawPressureWave>' +
+    '</NibpBloodPressure></NibpBloodPressures></MeasDataLogger>' +
+    '<Results><Result><SNR>23</SNR></Result></Results></BPplus>';
+
+  const small = minimalXml(xml);
+
+  check('the bulk is gone',
+    !/RawPressureWave|NibpDetailedData|<Results>/.test(small), small.slice(0, 120));
+  check('every determination is still there',
+    (small.match(/<NibpBloodPressure>/g) || []).length === 2);
+  check('and keeps the readings that made the average',
+    small.includes('<Sys>126</Sys>') && small.includes('<Sys>130</Sys>'));
+  check('the suprasystolic recording survives, since nothing else rebuilds it',
+    small.includes('RawSuprasystolicPressure') && small.includes('RawCuffPPressure'));
+  check('it is a fraction of the size', small.length < xml.length / 4,
+    small.length + ' of ' + xml.length);
+
+  // Smaller and wrong is the one outcome worth avoiding.
+  check('something unparseable comes back untouched',
+    minimalXml('<BPplus>truncated') === '<BPplus>truncated');
+  check('and so does nothing at all', minimalXml('') === '');
+}
+
 // -- The dictionary REDCap has to swallow ---------------------------------
 // A csv.writer rewrite quoted the byte-order mark into the first field, so the
 // first column arrived named  "Variable / Field Name"  with the quotes as part

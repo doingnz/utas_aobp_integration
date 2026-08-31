@@ -232,7 +232,7 @@ document.body.appendChild(hidden);
 window.AOBP_CONFIG = {
   record: document.getElementById('record').value,
   event_id: '1', repeat_instance: '1', pid: '0',
-  sdkUrl: new URL('../sdk/index.js?v=1.7.24', location.href).href,
+  sdkUrl: new URL('../sdk/index.js?v=1.7.25', location.href).href,
   saveXmlAsFile: true,    // posts to the EM stand-in at the foot of this page
   clockToleranceMinutes: 5,
   trace: true,
@@ -243,12 +243,12 @@ document.getElementById('record').addEventListener('input', function () {
 });
 </script>
 
-<script src="../js/aobp.js?v=1.7.24"></script>
+<script src="../js/aobp.js?v=1.7.25"></script>
 
 <script type="module">
-import * as sdk from '../sdk/index.js?v=1.7.24';
+import * as sdk from '../sdk/index.js?v=1.7.25';
 
-const BUILD = '1.7.24';
+const BUILD = '1.7.25';
 const BUILT = '2026-09-01';
 const $ = id => document.getElementById(id);
 

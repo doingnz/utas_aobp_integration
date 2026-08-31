@@ -355,8 +355,18 @@ not-stored field=seated_raw_xml bytes=125768 sha256=b920b403… at=…
 ```
 
 so a record never reads as a measurement that produced no recording when in fact
-one was lost. With file storage **off**, the field falls back to holding the XML
-itself, truncation and all, because then there is nowhere else for it to go.
+one was lost.
+
+**With file storage off** the field holds the XML itself — reduced, because whole
+will not fit. A text field holds 65,535 bytes and an AOBP result is twice that,
+so the choice is not between whole and reduced but between reduced and
+truncated, and a document cut off mid-element is worth nothing.
+`sdk.minimalXml()` drops the derived `<Results>`, which recompute from
+`MeasDataLogger`, and each determination's `<RawPressureWave>` and
+`<NibpDetailedData>`. What stays is what nothing else can reconstruct: the
+suprasystolic and cuff recordings, and every determination's Sys/Dia/Map/Pr,
+timestamp, alert and motion flag. Measured on a real standing AOBP: **105 kB
+becomes 13 kB**, which fits with room to spare.
 
 **When it fails.** The measurement itself is safe: the numbers are in their
 fields before the upload is attempted. The recording is not — it exists nowhere
