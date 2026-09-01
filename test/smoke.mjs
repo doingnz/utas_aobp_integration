@@ -559,7 +559,7 @@ console.log('\na simulated device is declared, on screen and in the record');
     /'simulator'\s*=>\s*\(bool\)/.test(php));
   check('and the page uses the simulator transport when it is set',
     /if \(\(window\.AOBP_CONFIG \|\| \{\}\)\.simulator\) \{/.test(app) &&
-    /new api\.SimulatorTransport\(\)/.test(app));
+    /new api\.SimulatorTransport\(\{/.test(app));
 
   // The status line is rewritten by every step of every measurement, so a
   // warning there is gone the moment anything happens.
@@ -574,6 +574,18 @@ console.log('\na simulated device is declared, on screen and in the record');
     /DEVICE_ID = '015D90DE1A0000DA'/.test(sim));
   check('so the record is written with a marked one',
     /'SIMULATED-' \+ measurement\.deviceId/.test(app));
+
+  // Both simulator options are load-bearing, and both defaults are wrong here.
+  // tickMs defaults to 400, which makes a seated AOBP take as long as a seated
+  // AOBP — nobody testing a file upload should wait out a rest period to reach
+  // it.
+  check('the simulator is told to run fast', /tickMs: 2,/.test(app));
+
+  // measureMode defaults to plain BP+, and a BP+ that is not in AOBP mode has
+  // Start disabled by design. Correct for a real device; a dead end for a
+  // simulated one, and the operator would have had no way forward.
+  check('and to be in AOBP mode, or Start stays refused',
+    /measureMode: api\.MeasureMode\.bpPlusAobp,/.test(app));
 }
 
 // -- The XML, cut down to something a text field can hold -----------------

@@ -463,7 +463,19 @@
       // Hence the banner, and the device id every record is written with.
       if ((window.AOBP_CONFIG || {}).simulator) {
         console.warn('[AOBP] SIMULATED DEVICE. Readings are fabricated.');
-        return new api.SimulatorTransport();
+        return new api.SimulatorTransport({
+          // Fast, not lifelike. This exists to exercise the survey, the upload
+          // and the record, and nobody testing a file upload should wait out a
+          // five-minute rest period to reach it. The default tick is 400 ms,
+          // which makes a seated AOBP take as long as a seated AOBP.
+          tickMs: 2,
+
+          // AOBP, or the page refuses to measure at all. The simulator defaults
+          // to plain BP+ mode, and a BP+ that is not in AOBP mode has Start
+          // disabled by design — correct for a real device, and a dead end for
+          // a simulated one.
+          measureMode: api.MeasureMode.bpPlusAobp,
+        });
       }
 
       var pick = api.recommendedTransport();

@@ -139,9 +139,11 @@ follow, both automatic:
   export identifies fabricated rows without anyone having to remember. Whoever
   reads it later was not in the room.
 
-The simulator runs at realistic speed: a seated AOBP takes as long as a seated
-AOBP. That is deliberate — a timing bug that only appears at real speed is one
-worth finding here.
+It runs **fast**, not lifelike: a seated measurement takes a couple of seconds.
+Nobody testing a file upload should have to wait out a five-minute rest period to
+reach it. The module also puts the simulator in **AOBP mode** — it defaults to
+plain BP+, and a BP+ that is not in AOBP mode has Start disabled by design, which
+is right for a real device and a dead end for a simulated one.
 
 ---
 
