@@ -41,6 +41,11 @@ export class UsbSerialTransport extends Transport {
     this._driver   = options.driver ?? Pl2303Driver;
     this._offerAll = options.offerAllDrivers === true;
 
+    // Open only a device the browser has already granted, and never show the
+    // chooser. See _open(): this is how a survey's next page keeps the
+    // connection the previous page established.
+    this._silent   = options.silent === true;
+
     this._device      = null;
     this._endpointIn  = null;
     this._endpointOut = null;
@@ -66,7 +71,24 @@ export class UsbSerialTransport extends Transport {
     }
 
     const filters = this._offerAll ? allUsbSerialFilters() : this._driver.filters.slice();
-    this._device = await navigator.usb.requestDevice({ filters });
+
+    // Resume without asking, where the browser already has permission. A survey
+    // is several pages and a page submit ends the JavaScript holding the
+    // device; the grant outlives it. getDevices() is what this origin may open
+    // without a chooser and without a user gesture. Only when the choice is
+    // unambiguous — more than one and the picker is the honest answer.
+    if (this._silent) {
+      const granted = await navigator.usb.getDevices();
+      const usable = granted.filter(device => matchDriver(device));
+      if (usable.length !== 1) {
+        throw new Error(usable.length
+          ? 'more than one USB adapter has been granted, so the operator has to choose'
+          : 'no USB adapter has been granted to this page yet');
+      }
+      this._device = usable[0];
+    } else {
+      this._device = await navigator.usb.requestDevice({ filters });
+    }
 
     // With a chooser showing every adapter, what came back decides the driver.
     if (this._offerAll) {

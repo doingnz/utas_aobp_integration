@@ -539,6 +539,80 @@ console.log('\na cancel says who asked for it');
     JSON.stringify({ code: deviceCancel?.code, reason: deviceCancel?.reason }));
 }
 
+// -- Picking the device back up after a page change ------------------------
+// A survey is several pages. The submit carrying the seated measurement ends
+// the JavaScript holding the port, so the standing page started with nothing
+// connected and asked the operator to connect again — participant stood up,
+// waiting, while somebody found the right port in a picker for the second time.
+// The browser's permission outlives the page even though the connection does
+// not.
+
+console.log('\na granted port is picked up without asking');
+
+{
+  const { WebSerialTransport } = await import('../sdk/transports/web-serial.js');
+
+  const stub = count => {
+    const ports = Array.from({ length: count }, () => ({
+      readable: null, writable: null,
+      getInfo: () => ({ usbVendorId: 0x067B }),
+      async open() {
+        this.opened = true;
+        this.readable = { getReader: () => ({ read: () => new Promise(() => {}), cancel: async () => {}, releaseLock() {} }) };
+        this.writable = { getWriter: () => ({ write: async () => {}, abort: async () => {}, releaseLock() {} }) };
+      },
+      async close() { this.opened = false; },
+      addEventListener() {}, removeEventListener() {},
+    }));
+    let pickerShown = false;
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { serial: {
+        getPorts: async () => ports,
+        requestPort: async () => { pickerShown = true; throw new Error('picker'); },
+        addEventListener() {}, removeEventListener() {},
+      } },
+      configurable: true, writable: true,
+    });
+    return { ports, shown: () => pickerShown };
+  };
+
+  const open = async count => {
+    const s = stub(count);
+    const t = new WebSerialTransport({ silent: true });
+    try {
+      await t.open();
+      await t.close();
+      return { ok: true, picker: s.shown(), opened: s.ports.filter(p => p.opened !== undefined).length };
+    } catch (e) {
+      return { ok: false, picker: s.shown(), message: e.message };
+    }
+  };
+
+  const one = await open(1);
+  check('one granted port opens with no picker', one.ok && !one.picker,
+    JSON.stringify(one));
+
+  // Nothing granted is the ordinary first visit, and the Connect button is
+  // already on screen saying what to do.
+  const none = await open(0);
+  check('nothing granted is refused rather than prompted',
+    !none.ok && !none.picker && /has been granted/.test(none.message));
+
+  // Which of two is the BP+ is not knowable from here. That is what the picker
+  // is for, and silently opening the wrong one would be worse than asking.
+  const two = await open(2);
+  check('more than one is left to the operator',
+    !two.ok && !two.picker && /more than one/.test(two.message));
+
+  // The page tries it on every load, and says nothing when there is nothing to
+  // resume — the first page of a survey is exactly that case.
+  const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+  check('the page attempts a resume on load',
+    /function resumeConnection/.test(app) && /connect\(\{ silent: true \}\)/.test(app));
+  check('and a failed resume is quiet, leaving Connect where it was',
+    /nothing to resume/.test(app));
+}
+
 // -- Nothing is filed until the page has been saved ------------------------
 // The file fields are on the instrument being filled in. A page submit saves
 // every field on that page, and the file input is empty — nobody chose a file —

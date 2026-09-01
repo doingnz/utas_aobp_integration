@@ -247,6 +247,23 @@ repeat nobody needs. Off by default, so the warning is shown.
 
 See also task 25 in the BP+ knowledge base, which is the firmware side of this.
 
+### Connecting once, not once per page
+
+A survey is several pages, and the submit that carries the seated measurement
+ends the JavaScript holding the serial port. The standing page therefore starts
+with nothing connected — and used to ask the operator to connect again, with the
+participant stood up and waiting.
+
+The browser's permission outlives the page even though the connection does not,
+so the module tries a **silent resume** on every page load: a port already
+granted to this origin can be opened with no picker and no user gesture. It
+happens before anything is on screen, and says nothing when there is nothing to
+resume, which is the ordinary first page.
+
+Only when the choice is unambiguous. With more than one granted port, which one
+is the BP+ is not knowable from the page, so the Connect button stands and the
+operator chooses — silently opening the wrong device would be worse than asking.
+
 ### Operator flow
 
 Connect, then **Start seated**. If `sys_standing_required` is `1` the module

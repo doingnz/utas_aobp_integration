@@ -335,10 +335,10 @@
       return sdk;
     }
 
-    async function connect() {
+    async function connect(options) {
       var api = await loadSdk();
 
-      var transport = makeTransport(api);
+      var transport = makeTransport(api, options);
       // A measurement started on the device carries no patient ID and belongs
       // to no record, so the module refuses it. Every measurement in this study
       // has to come from this page.
@@ -462,9 +462,11 @@
      * against the SDK simulator without a device attached; nothing in REDCap
      * sets it.
      */
-    function makeTransport(api) {
+    function makeTransport(api, options) {
+      options = options || {};
+
       if (typeof window.AOBP_TRANSPORT === 'function') {
-        return window.AOBP_TRANSPORT(api);
+        return window.AOBP_TRANSPORT(api, options);
       }
 
       // A project setting, so the survey, the upload and the record can be
@@ -1223,6 +1225,38 @@
     }
 
     /**
+     * Pick the device back up, if this page can do it without asking.
+     *
+     * A survey is several pages. The submit that carries the seated measurement
+     * ends the JavaScript holding the port, so the standing page started with
+     * nothing connected and asked the operator to connect again — participant
+     * stood up, waiting, while somebody found the right entry in a port picker
+     * for the second time.
+     *
+     * The browser's permission outlives the page even though the connection
+     * does not, so a port already granted to this origin can be opened with no
+     * picker and no user gesture. Quiet either way: this runs on every page
+     * load, including the first, where there is usually nothing to resume.
+     */
+    async function resumeConnection() {
+      if (device) return;
+
+      try {
+        await connect({ silent: true });
+      } catch (error) {
+        // Ordinary on a first visit, and not worth a word on screen: the
+        // Connect button is already there, saying what to do.
+        console.log('[AOBP] nothing to resume (' + error.message + ')');
+        return;
+      }
+
+      setStatus('success', 'BP+ reconnected' +
+        (deviceIsAobp() ? '.' : ' — but it is not in AOBP mode.'), 'all');
+      hideConnectButtons();
+      updateButtons();
+    }
+
+    /**
      * Say on screen, permanently, that nothing here is a real measurement.
      *
      * The status line cannot carry this: it is rewritten by every step of every
@@ -1667,6 +1701,7 @@
 
     showSimulatorBanner();
     setStatus('ready', 'Connect the BP+ to begin.', 'all');
+    resumeConnection();
 
     // Exposed so the test harness can drive the same code the survey runs.
     window.AOBP = {

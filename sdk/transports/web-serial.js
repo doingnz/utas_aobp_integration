@@ -20,12 +20,18 @@ export class WebSerialTransport extends Transport {
    * @param {number} [options.baudRate]     default 115200
    * @param {string} [options.flowControl]  'hardware' (default) or 'none'
    * @param {Array}  [options.filters]      passed to requestPort()
+   * @param {boolean} [options.silent]     reuse a granted port, no picker
    */
   constructor(options = {}) {
     super('Web Serial');
     this._baudRate    = options.baudRate ?? 115200;
     this._flowControl = options.flowControl === 'none' ? 'none' : 'hardware';
     this._filters     = options.filters || null;
+
+    // Open only a port the browser has already granted, and never show the
+    // picker. For resuming after a page change, where there is no user gesture
+    // to spend and nothing worth asking.
+    this._silent      = options.silent === true;
 
     this._port   = null;
     this._reader = null;
@@ -54,10 +60,31 @@ export class WebSerialTransport extends Transport {
 
     this._unplugged = false;
 
-    // Must be called from a user gesture — the caller's click handler.
-    this._port = await navigator.serial.requestPort(
-      this._filters ? { filters: this._filters } : {}
-    );
+    // Resume without asking, where the browser already has permission.
+    //
+    // A survey is several pages, and a page submit ends the JavaScript that
+    // held the port — so an operator who connected for the seated measurement
+    // was asked to connect again for the standing one, with the participant
+    // stood up and waiting. The grant survives navigation even though the
+    // connection does not, and getPorts() is what this origin may open with no
+    // picker and no user gesture.
+    //
+    // Only when the choice is unambiguous. More than one granted port and the
+    // right one is not knowable from here; that is what the picker is for.
+    if (this._silent) {
+      const granted = await navigator.serial.getPorts();
+      if (granted.length !== 1) {
+        throw new Error(granted.length
+          ? 'more than one serial port has been granted, so the operator has to choose'
+          : 'no serial port has been granted to this page yet');
+      }
+      this._port = granted[0];
+    } else {
+      // Must be called from a user gesture — the caller's click handler.
+      this._port = await navigator.serial.requestPort(
+        this._filters ? { filters: this._filters } : {}
+      );
+    }
 
     const settings = {
       baudRate:    this._baudRate,
