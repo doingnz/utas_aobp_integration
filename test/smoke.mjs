@@ -611,6 +611,58 @@ console.log('\na granted port is picked up without asking');
     /function resumeConnection/.test(app) && /connect\(\{ silent: true \}\)/.test(app));
   check('and a failed resume is quiet, leaving Connect where it was',
     /nothing to resume/.test(app));
+
+  // Driven, because the checks above passed while the resume was still reaching
+  // the picker: `silent` was threaded into makeTransport and not into the
+  // constructor it calls, so the browser refused with "Must be handling a user
+  // gesture to show a permission request" on every standing page.
+  if (JSDOM) {
+    const realNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    const ports = [{
+      readable: null, writable: null,
+      getInfo: () => ({ usbVendorId: 0x067B }),
+      async open() {
+        this.opened = true;
+        this.readable = { getReader: () => ({ read: () => new Promise(() => {}), cancel: async () => {}, releaseLock() {} }) };
+        this.writable = { getWriter: () => ({ write: async () => {}, abort: async () => {}, releaseLock() {} }) };
+      },
+      async close() { this.opened = false; },
+      addEventListener() {}, removeEventListener() {},
+    }];
+    let picker = false;
+    const fake = {
+      serial: {
+        getPorts: async () => ports,
+        requestPort: async () => { picker = true; throw new Error('picker'); },
+        addEventListener() {}, removeEventListener() {},
+      },
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/151',
+      maxTouchPoints: 0,
+    };
+    // The SDK is loaded by Node and reads the global navigator; the module runs
+    // in jsdom and reads the window's. Both have to be the stub.
+    Object.defineProperty(globalThis, 'navigator', { value: fake, configurable: true, writable: true });
+
+    const rw = new JSDOM(`<!doctype html><html><body>
+      <button id="connect-bp-btn-seated"></button><button id="start-seated-btn"></button>
+      <div id="status-display-seated"></div><div id="visit-state-seated"></div>
+      <div id="seated-results-panel"></div>
+      <input type="hidden" name="sys_standing_required" value="0">
+    </body></html>`, { runScripts: 'outside-only', pretendToBeVisual: true }).window;
+    Object.defineProperty(rw, 'navigator', { value: fake, configurable: true });
+    rw.AOBP_CONFIG = { record: 'R1', sdkUrl: new URL('../sdk/index.js', import.meta.url).href };
+    rw.console.log = () => {}; rw.console.warn = () => {}; rw.console.error = () => {};
+
+    rw.eval(app);
+    rw.document.dispatchEvent(new rw.Event('DOMContentLoaded'));
+    await new Promise(r => setTimeout(r, 700));
+
+    check('a real page load opens the granted port and never reaches the picker',
+      ports[0].opened === true && picker === false,
+      'opened=' + ports[0].opened + ' picker=' + picker);
+
+    if (realNavigator) Object.defineProperty(globalThis, 'navigator', realNavigator);
+  }
 }
 
 // -- Nothing is filed until the page has been saved ------------------------

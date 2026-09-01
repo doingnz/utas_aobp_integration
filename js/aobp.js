@@ -506,11 +506,17 @@
                   ' (android=' + env.android + ' handheld=' + env.handheld +
                   ' webSerial=' + env.webSerial + ')');
 
+      // `silent` has to reach the constructor, not just this function: without
+      // it the resume called requestPort() and the browser refused, because
+      // showing a picker needs a user gesture and a page load is not one.
       if (pick.kind === api.TransportKind.serial) {
-        return new api.WebSerialTransport({ filters: PORT_FILTERS });
+        return new api.WebSerialTransport({
+          filters: PORT_FILTERS,
+          silent: options.silent === true,
+        });
       }
       if (pick.kind === api.TransportKind.usbSerial) {
-        return new api.UsbSerialTransport();
+        return new api.UsbSerialTransport({ silent: options.silent === true });
       }
 
       // Bluetooth needs the separate BP+ Bridge, which this study does not use,
