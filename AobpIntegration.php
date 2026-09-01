@@ -110,78 +110,59 @@ class AobpIntegration extends AbstractExternalModule
             ];
         }
 
-        $tmpFile = tempnam(sys_get_temp_dir(), 'aobp_');
-        if ($tmpFile === false) {
-            return ['status' => 'error', 'message' => 'Could not create a temporary file.'];
+        // Held, not filed. Filing it now creates an edoc that the next page
+        // submit destroys: REDCap saves every field on the page, the file input
+        // is empty because nobody chose a file, and clearing a file field sets
+        // delete_date on the edoc metadata. Re-attaching that doc id afterwards
+        // put the link back in the exports and gave a download of "Either this
+        // file does not exist OR you do not have permission to download it" —
+        // a link to a file REDCap considers deleted.
+        //
+        // So the bytes wait here, and redcap_save_record files them once the
+        // save that would have destroyed them is over. One edoc per recording,
+        // and never a tombstoned one.
+        $stash = $this->stashPath($project_id, $record, $event_id, $repeat_instance, $field);
+
+        if (file_put_contents($stash, $xml) === false) {
+            $this->log('AOBP recording could not be held', [
+                'record' => $record, 'instance' => $repeat_instance, 'field' => $field,
+            ]);
+            return ['status' => 'error', 'message' => 'The server could not hold the recording.'];
         }
 
-        try {
-            if (file_put_contents($tmpFile, $xml) === false) {
-                throw new Exception('Could not write the temporary file.');
-            }
+        $filename = $this->recordingFilename($record, $repeat_instance, $mode);
 
-            $filename = $record . '_inst' . $repeat_instance . '_' . $mode . '_aobp.xml';
+        $this->log('AOBP recording held for saving', [
+            'record'   => $record,
+            'instance' => $repeat_instance,
+            'field'    => $field,
+            'bytes'    => strlen($xml),
+        ]);
 
-            // Two steps, and both are required.
-            //
-            // storeFile() copies the file into REDCap's edoc store and registers
-            // it, returning a doc id — or 0. That gets it onto the server and
-            // nowhere near the participant: nothing yet says which record, event,
-            // instance or field it belongs to.
-            //
-            // addFileToField() is what puts it on the record, and is the step
-            // that makes it visible on the form and downloadable afterwards.
-            // The instance matters here: aobp_visit repeats, and a file filed
-            // without one lands on the first instance whatever visit it came
-            // from.
-            $docId = \REDCap::storeFile($tmpFile, $project_id, $filename);
-            if (!$docId) {
-                throw new Exception('REDCap::storeFile did not store the file.');
-            }
+        return [
+            'status'   => 'success',
+            'field'    => $field,
+            'filename' => $filename,
+        ];
+    }
 
-            $linked = \REDCap::addFileToField(
-                $docId,
-                $project_id,
-                $record,
-                $field,
-                $event_id,
-                $repeat_instance
-            );
+    /** Where one recording waits between the measurement and the page save. */
+    private function stashPath($project_id, $record, $event_id, $repeat_instance, $field): string
+    {
+        $dir = defined('APP_PATH_TEMP') && is_dir(APP_PATH_TEMP)
+            ? rtrim(APP_PATH_TEMP, '/' . DIRECTORY_SEPARATOR)
+            : sys_get_temp_dir();
 
-            if (!$linked) {
-                throw new Exception(
-                    'The file was stored as doc ' . $docId .
-                    ' but REDCap::addFileToField did not attach it to ' . $field . '.'
-                );
-            }
+        // Hashed, because a record id is whatever the project allows and this
+        // becomes a path. Deterministic, because the save has to find it again.
+        $key = md5(implode('|', [$project_id, $record, $event_id, $repeat_instance ?: 1, $field]));
 
-            $this->log('AOBP recording stored', [
-                'record'   => $record,
-                'instance' => $repeat_instance,
-                'field'    => $field,
-                'doc_id'   => $docId,
-                'bytes'    => strlen($xml),
-            ]);
+        return $dir . DIRECTORY_SEPARATOR . 'aobp_pending_' . $key . '.xml';
+    }
 
-            return [
-                'status'   => 'success',
-                'field'    => $field,
-                'filename' => $filename,
-                'doc_id'   => $docId,
-            ];
-        } catch (Exception $e) {
-            $this->log('AOBP recording failed', [
-                'record'   => $record,
-                'instance' => $repeat_instance,
-                'field'    => $field,
-                'message'  => $e->getMessage(),
-            ]);
-            return ['status' => 'error', 'message' => $e->getMessage()];
-        } finally {
-            if (is_file($tmpFile)) {
-                unlink($tmpFile);
-            }
-        }
+    private function recordingFilename($record, $repeat_instance, $mode): string
+    {
+        return $record . '_inst' . ($repeat_instance ?: 1) . '_' . $mode . '_aobp.xml';
     }
 
     /**
@@ -268,18 +249,19 @@ class AobpIntegration extends AbstractExternalModule
     }
 
     /**
-     * Put the recording back after REDCap has saved the page over it.
+     * File the recordings the page left waiting, now the save is over.
      *
-     * The file fields live on the instrument being filled in. A page submit
-     * saves every field on that page, and the file input is empty — nobody
-     * chose a file, the module attached one behind it — so REDCap writes that
-     * emptiness over the doc id and the recording vanishes from the record. The
-     * bytes are untouched in the edoc store; only the link is gone.
+     * This runs after the submit that would have destroyed them. The file
+     * fields are on the instrument being filled in, REDCap saves every field on
+     * the page, and the file input is empty because nobody chose a file — so an
+     * edoc attached before the submit gets cleared, and clearing a file field
+     * sets delete_date on its metadata. The link can be put back; the file
+     * cannot, because REDCap will not serve a row it considers deleted. That is
+     * the "Either this file does not exist OR you do not have permission to
+     * download it" a working link gave.
      *
-     * So the link is made again, after the save that broke it. The doc id comes
-     * from this module's own log, written when the file was stored. Nothing
-     * happens when the field still holds a value, which is every save that did
-     * not clear one.
+     * So nothing is filed until here: one edoc per recording, created after the
+     * only thing that would have killed it.
      */
     public function redcap_save_record(
         $project_id,
@@ -295,61 +277,59 @@ class AobpIntegration extends AbstractExternalModule
             return;
         }
 
-        foreach (['seated_raw_xml', 'standing_raw_xml'] as $field) {
-            $this->restoreRecording($project_id, $record, $event_id, $repeat_instance, $field);
+        foreach (['seated' => 'seated_raw_xml', 'standing' => 'standing_raw_xml'] as $mode => $field) {
+            $this->fileHeldRecording(
+                $project_id, $record, $event_id, $repeat_instance, $mode, $field
+            );
         }
     }
 
-    private function restoreRecording($project_id, $record, $event_id, $repeat_instance, $field): void
-    {
-        if ($this->storedValue($project_id, $record, $event_id, $repeat_instance, $field) !== null) {
-            return;                       // still attached; nothing was cleared
+    private function fileHeldRecording(
+        $project_id, $record, $event_id, $repeat_instance, $mode, $field
+    ): void {
+        $stash = $this->stashPath($project_id, $record, $event_id, $repeat_instance, $field);
+        if (!is_file($stash)) {
+            return;                       // nothing waiting for this position
         }
 
-        $docId = $this->lastStoredDocId($record, $repeat_instance, $field);
-        if (!$docId) {
-            return;                       // nothing was ever stored for this one
-        }
-
-        $linked = \REDCap::addFileToField(
-            $docId, $project_id, $record, $field, $event_id, $repeat_instance
-        );
-
-        $this->log($linked ? 'AOBP recording re-attached' : 'AOBP recording could not be re-attached', [
-            'record'   => $record,
-            'instance' => $repeat_instance,
-            'field'    => $field,
-            'doc_id'   => $docId,
-        ]);
-    }
-
-    /**
-     * The newest doc id this module stored for one field of one instance.
-     *
-     * Highest wins rather than last returned: edoc ids increase, and the log
-     * query is not relied on to come back in order.
-     */
-    private function lastStoredDocId($record, $repeat_instance, $field)
-    {
-        $instance = (string) ($repeat_instance ?: 1);
-        $best = 0;
+        $filename = $this->recordingFilename($record, $repeat_instance, $mode);
 
         try {
-            $rows = $this->queryLogs(
-                "SELECT doc_id, record, instance, field WHERE message = 'AOBP recording stored'",
-                []
-            );
-            while ($row = db_fetch_assoc($rows)) {
-                if ((string) $row['record'] !== (string) $record) continue;
-                if ((string) $row['instance'] !== $instance)      continue;
-                if ((string) $row['field'] !== (string) $field)   continue;
-                $best = max($best, (int) $row['doc_id']);
+            $docId = \REDCap::storeFile($stash, $project_id, $filename);
+            if (!$docId) {
+                throw new Exception('REDCap::storeFile did not store the file.');
             }
+
+            $linked = \REDCap::addFileToField(
+                $docId, $project_id, $record, $field, $event_id, $repeat_instance
+            );
+            if (!$linked) {
+                throw new Exception(
+                    'Stored as doc ' . $docId . ' but addFileToField did not attach it.'
+                );
+            }
+
+            $this->log('AOBP recording stored', [
+                'record'   => $record,
+                'instance' => $repeat_instance,
+                'field'    => $field,
+                'doc_id'   => $docId,
+                'bytes'    => (string) filesize($stash),
+            ]);
         } catch (Throwable $e) {
-            return 0;
+            // Left in place deliberately: the next save of this instance tries
+            // again, and a recording is not thrown away because one attempt
+            // failed.
+            $this->log('AOBP recording failed', [
+                'record'   => $record,
+                'instance' => $repeat_instance,
+                'field'    => $field,
+                'message'  => $e->getMessage(),
+            ]);
+            return;
         }
 
-        return $best;
+        unlink($stash);
     }
 
     /** The version in this module's own config.json, or 'unknown'. */

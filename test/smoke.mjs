@@ -539,40 +539,50 @@ console.log('\na cancel says who asked for it');
     JSON.stringify({ code: deviceCancel?.code, reason: deviceCancel?.reason }));
 }
 
-// -- The save that wipes the file ------------------------------------------
+// -- Nothing is filed until the page has been saved ------------------------
 // The file fields are on the instrument being filled in. A page submit saves
-// every field on that page, and the file input is empty — nobody chose a file,
-// the module attached one behind it — so REDCap writes that emptiness over the
-// doc id. Seen on a real project: the XML shows on the record, Continue is
-// pressed, the BP values save and the file is gone.
+// every field on that page, and the file input is empty — nobody chose a file —
+// so an edoc attached beforehand is cleared, and clearing a file field sets
+// delete_date on its metadata. Re-attaching the doc id put the link back in the
+// exports and gave "Either this file does not exist OR you do not have
+// permission to download it": a link to a file REDCap considers deleted.
 
-console.log('\na recording survives the page being saved');
+console.log('\nrecordings are filed after the save, not before');
 
 {
   const php = fs.readFileSync(new URL('../AobpIntegration.php', import.meta.url), 'utf8');
 
-  check('the module hooks the save', /public function redcap_save_record\(/.test(php));
-  check('and both recordings are checked',
-    /'seated_raw_xml', 'standing_raw_xml'/.test(php));
+  const ajax = php.slice(php.indexOf('public function redcap_module_ajax'),
+                         php.indexOf('private function stashPath'));
+  check('the ajax call holds the recording and files nothing',
+    /stashPath\(/.test(ajax) &&
+    !/storeFile|addFileToField/.test(ajax));
 
-  // The bytes are untouched in the edoc store; only the link is gone. Re-attach
-  // rather than re-upload — there is nothing left in the browser to re-upload.
-  check('a cleared field is re-attached, not re-uploaded',
-    /function restoreRecording/.test(php) &&
-    /REDCap::addFileToField\(/.test(php.slice(php.indexOf('restoreRecording'))));
+  check('the save hook files it', /public function redcap_save_record\(/.test(php) &&
+    /function fileHeldRecording/.test(php));
 
-  // Every ordinary save must cost nothing.
-  const restore = php.slice(php.indexOf('private function restoreRecording'));
-  check('a field that still holds a value is left alone',
-    restore.includes('!== null) {') &&
-    restore.indexOf('return;') < restore.indexOf('addFileToField'));
+  const filing = php.slice(php.indexOf('private function fileHeldRecording'));
+  check('as a fresh edoc, not a re-attached one',
+    /REDCap::storeFile\(\$stash/.test(filing) && /REDCap::addFileToField\(/.test(filing));
 
-  // The doc id comes from this module's own log of storing it.
-  check('the doc id comes from the log written when it was stored',
-    /function lastStoredDocId/.test(php) &&
-    /message = 'AOBP recording stored'/.test(php));
-  check('and the newest wins, without trusting the query order',
-    /max\(\$best, \(int\) \$row\['doc_id'\]\)/.test(php));
+  // Both positions, and only this instrument.
+  check('both recordings are looked for',
+    /'seated' => 'seated_raw_xml', 'standing' => 'standing_raw_xml'/.test(php));
+
+  // A save with nothing waiting must cost nothing.
+  check('a save with nothing waiting does nothing',
+    /if \(!is_file\(\$stash\)\) \{/.test(filing));
+
+  // A failed attempt must not throw the recording away: the next save retries.
+  const unlinkAt = filing.indexOf('unlink($stash)');
+  const catchAt  = filing.indexOf('catch (Throwable');
+  check('a failure leaves the recording for the next save',
+    catchAt > 0 && unlinkAt > catchAt);
+
+  // The path has to be found again by the save, and a record id is whatever the
+  // project allows.
+  check('the holding place is deterministic and not built from a record id',
+    /md5\(implode\('\|'/.test(php));
 }
 
 // -- Is a standing measurement required? ----------------------------------

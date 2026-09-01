@@ -436,17 +436,21 @@ is not a console warning: the operator is told, and a **Resend recording** butto
 appears, which retries without asking the participant to sit through another
 measurement.
 
-**The page save clears the field, and the module puts it back.** The file fields
-are on the instrument being filled in. A page submit saves every field on that
-page, and the file input is empty — nobody chose a file, the module attached one
-behind it — so REDCap writes that emptiness over the doc id and the recording
-disappears from the record. Seen on a real project: the XML shows on the record,
-Continue is pressed, the BP values save, the file is gone.
+**Nothing is filed until the page has been saved.** The file fields are on the
+instrument being filled in. A page submit saves every field on that page, and
+the file input is empty — nobody chose a file, the module would have attached one
+behind it — so an edoc attached during the measurement is cleared by the submit.
+Clearing a file field sets `delete_date` on its metadata, and REDCap will not
+serve a row it considers deleted: the link comes back in the exports and the
+download says *"Either this file does not exist OR you do not have permission to
+download it"*.
 
-The bytes are untouched in the edoc store; only the link is broken. So
-`redcap_save_record` makes the link again, using the doc id from this module's
-own log of storing it. A save that cleared nothing costs nothing: the field is
-read first, and a field that still holds a value is left alone.
+So `save-xml` **holds** the XML in a temporary file, and `redcap_save_record`
+files it once the save that would have destroyed it is over. One edoc per
+recording, created after the only thing that would have killed it.
+
+A failed attempt leaves the held file where it is, so the next save of that
+instance tries again rather than throwing the recording away.
 
 One thing still needs a REDCap instance to settle: whether `$record` is
 populated mid-survey. A file cannot attach to a record that does not exist, and
