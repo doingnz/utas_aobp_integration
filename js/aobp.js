@@ -128,6 +128,13 @@
   document.addEventListener('DOMContentLoaded', function () {
     if (started) return;
     started = true;
+
+    // First line in the console, before anything can fail. "Which build is this
+    // server running?" was answerable only by reading the code, because REDCap
+    // takes the version from the directory name and a survey page shows none.
+    console.log('[AOBP] module ' +
+                ((window.AOBP_CONFIG || {}).moduleVersion || 'version unknown'));
+
     start().catch(function (error) {
       console.error('[AOBP] failed to start', error);
     });

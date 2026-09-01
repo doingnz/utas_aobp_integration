@@ -260,6 +260,19 @@ class AobpIntegration extends AbstractExternalModule
         return ($value === null || $value === '') ? null : (string) $value;
     }
 
+    /** The version in this module's own config.json, or 'unknown'. */
+    private function moduleVersion(): string
+    {
+        $path = __DIR__ . '/config.json';
+        if (!is_readable($path)) {
+            return 'unknown';
+        }
+        $config = json_decode((string) file_get_contents($path), true);
+        return is_array($config) && isset($config['version'])
+            ? (string) $config['version']
+            : 'unknown';
+    }
+
     private function emitAobpConfig($project_id, $record, $event_id, $repeat_instance): void
     {
         $config = [
@@ -272,6 +285,11 @@ class AobpIntegration extends AbstractExternalModule
             'clockToleranceMinutes' => $this->clockToleranceMinutes(),
             'trace'           => (bool) $this->getProjectSetting('aobp-trace'),
             'simulator'       => (bool) $this->getProjectSetting('aobp-simulator'),
+
+            // So a console says which build answered. REDCap takes the version
+            // from the directory name and shows it in the module list, but a
+            // screenshot of a survey page shows neither.
+            'moduleVersion'   => $this->moduleVersion(),
 
             // Read here because the page cannot read it for itself.
             //
