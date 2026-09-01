@@ -436,18 +436,6 @@ is not a console warning: the operator is told, and a **Resend recording** butto
 appears, which retries without asking the participant to sit through another
 measurement.
 
-**The page save clears the field, and the module puts it back.** The file fields
-are on the instrument being filled in. A page submit saves every field on that
-page, and the file input is empty — nobody chose a file, the module attached one
-behind it — so REDCap writes that emptiness over the doc id and the recording
-disappears from the record. Seen on a real project: the XML shows on the record,
-Continue is pressed, the BP values save, the file is gone.
-
-The bytes are untouched in the edoc store; only the link is broken. So
-`redcap_save_record` makes the link again, using the doc id from this module's
-own log of storing it. A save that cleared nothing costs nothing: the field is
-read first, and a field that still holds a value is left alone.
-
 One thing still needs a REDCap instance to settle: whether `$record` is
 populated mid-survey. A file cannot attach to a record that does not exist, and
 on a survey the record is created when the first page is submitted. The module

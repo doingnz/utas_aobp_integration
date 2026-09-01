@@ -539,6 +539,42 @@ console.log('\na cancel says who asked for it');
     JSON.stringify({ code: deviceCancel?.code, reason: deviceCancel?.reason }));
 }
 
+// -- The save that wipes the file ------------------------------------------
+// The file fields are on the instrument being filled in. A page submit saves
+// every field on that page, and the file input is empty — nobody chose a file,
+// the module attached one behind it — so REDCap writes that emptiness over the
+// doc id. Seen on a real project: the XML shows on the record, Continue is
+// pressed, the BP values save and the file is gone.
+
+console.log('\na recording survives the page being saved');
+
+{
+  const php = fs.readFileSync(new URL('../AobpIntegration.php', import.meta.url), 'utf8');
+
+  check('the module hooks the save', /public function redcap_save_record\(/.test(php));
+  check('and both recordings are checked',
+    /'seated_raw_xml', 'standing_raw_xml'/.test(php));
+
+  // The bytes are untouched in the edoc store; only the link is gone. Re-attach
+  // rather than re-upload — there is nothing left in the browser to re-upload.
+  check('a cleared field is re-attached, not re-uploaded',
+    /function restoreRecording/.test(php) &&
+    /REDCap::addFileToField\(/.test(php.slice(php.indexOf('restoreRecording'))));
+
+  // Every ordinary save must cost nothing.
+  const restore = php.slice(php.indexOf('private function restoreRecording'));
+  check('a field that still holds a value is left alone',
+    restore.includes('!== null) {') &&
+    restore.indexOf('return;') < restore.indexOf('addFileToField'));
+
+  // The doc id comes from this module's own log of storing it.
+  check('the doc id comes from the log written when it was stored',
+    /function lastStoredDocId/.test(php) &&
+    /message = 'AOBP recording stored'/.test(php));
+  check('and the newest wins, without trusting the query order',
+    /max\(\$best, \(int\) \$row\['doc_id'\]\)/.test(php));
+}
+
 // -- Is a standing measurement required? ----------------------------------
 // sys_standing_required is a calc field with @HIDDEN, and REDCap renders
 // neither on a survey page. The module found no input, read it as empty, and
@@ -569,9 +605,12 @@ console.log('\nwhether standing is required has two sources');
   check('and said once, not on every button repaint',
     /standingUnknownSaid/.test(app));
 
-  // Null rather than 0 when the server cannot read it, for the same reason.
-  check('the server distinguishes unknown from zero',
-    /return null;/.test(php.slice(php.indexOf('storedStandingRequired'))));
+  // Null rather than '' when the server cannot read it, for the same reason.
+  // The reader is shared with the file fields now, so the distinction lives in
+  // storedValue() rather than in the standing-required wrapper.
+  const reader = php.slice(php.indexOf('private function storedValue'));
+  check('the server distinguishes unknown from empty',
+    /return \(\$value === null \|\| \$value === ''\) \? null :/.test(reader));
 }
 
 // -- A simulated device, and how a record says so -------------------------

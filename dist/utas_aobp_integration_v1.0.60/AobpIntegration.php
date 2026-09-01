@@ -221,13 +221,13 @@ class AobpIntegration extends AbstractExternalModule
      * this installation does with static file URLs.
      */
     /**
-     * What REDCap has stored for one field on this record, or null.
+     * What REDCap has stored for sys_standing_required, or null.
      *
-     * Null rather than '' when it cannot be read: for
-     * sys_standing_required, "not required" and "not known" are different
-     * answers, and the page says so rather than quietly finishing the visit.
+     * Null rather than 0 when it cannot be read: "not required" and "not known"
+     * are different answers, and the page says so rather than quietly finishing
+     * the visit.
      */
-    private function storedValue($project_id, $record, $event_id, $repeat_instance, $field)
+    private function storedStandingRequired($project_id, $record, $event_id, $repeat_instance)
     {
         if ((string) $record === '') {
             return null;
@@ -235,10 +235,10 @@ class AobpIntegration extends AbstractExternalModule
 
         try {
             $data = \REDCap::getData([
-                'project_id'    => $project_id,
-                'records'       => [$record],
-                'fields'        => [$field],
-                'events'        => $event_id ? [$event_id] : null,
+                'project_id'   => $project_id,
+                'records'      => [$record],
+                'fields'       => ['sys_standing_required'],
+                'events'       => $event_id ? [$event_id] : null,
                 'return_format' => 'array',
             ]);
         } catch (Throwable $e) {
@@ -253,103 +253,11 @@ class AobpIntegration extends AbstractExternalModule
         // Repeating instruments nest under repeat_instances; a flat event does
         // not. Both shapes are read rather than assuming which project this is.
         $instance = $repeat_instance ?: 1;
-        $value = $row['repeat_instances'][$event_id][$this->aobpInstrument()][$instance][$field]
-              ?? $row[$event_id][$field]
+        $value = $row['repeat_instances'][$event_id][$this->aobpInstrument()][$instance]['sys_standing_required']
+              ?? $row[$event_id]['sys_standing_required']
               ?? null;
 
         return ($value === null || $value === '') ? null : (string) $value;
-    }
-
-    private function storedStandingRequired($project_id, $record, $event_id, $repeat_instance)
-    {
-        return $this->storedValue(
-            $project_id, $record, $event_id, $repeat_instance, 'sys_standing_required'
-        );
-    }
-
-    /**
-     * Put the recording back after REDCap has saved the page over it.
-     *
-     * The file fields live on the instrument being filled in. A page submit
-     * saves every field on that page, and the file input is empty — nobody
-     * chose a file, the module attached one behind it — so REDCap writes that
-     * emptiness over the doc id and the recording vanishes from the record. The
-     * bytes are untouched in the edoc store; only the link is gone.
-     *
-     * So the link is made again, after the save that broke it. The doc id comes
-     * from this module's own log, written when the file was stored. Nothing
-     * happens when the field still holds a value, which is every save that did
-     * not clear one.
-     */
-    public function redcap_save_record(
-        $project_id,
-        $record,
-        $instrument,
-        $event_id,
-        $group_id,
-        $survey_hash,
-        $response_id,
-        $repeat_instance
-    ) {
-        if ($instrument !== $this->aobpInstrument()) {
-            return;
-        }
-
-        foreach (['seated_raw_xml', 'standing_raw_xml'] as $field) {
-            $this->restoreRecording($project_id, $record, $event_id, $repeat_instance, $field);
-        }
-    }
-
-    private function restoreRecording($project_id, $record, $event_id, $repeat_instance, $field): void
-    {
-        if ($this->storedValue($project_id, $record, $event_id, $repeat_instance, $field) !== null) {
-            return;                       // still attached; nothing was cleared
-        }
-
-        $docId = $this->lastStoredDocId($record, $repeat_instance, $field);
-        if (!$docId) {
-            return;                       // nothing was ever stored for this one
-        }
-
-        $linked = \REDCap::addFileToField(
-            $docId, $project_id, $record, $field, $event_id, $repeat_instance
-        );
-
-        $this->log($linked ? 'AOBP recording re-attached' : 'AOBP recording could not be re-attached', [
-            'record'   => $record,
-            'instance' => $repeat_instance,
-            'field'    => $field,
-            'doc_id'   => $docId,
-        ]);
-    }
-
-    /**
-     * The newest doc id this module stored for one field of one instance.
-     *
-     * Highest wins rather than last returned: edoc ids increase, and the log
-     * query is not relied on to come back in order.
-     */
-    private function lastStoredDocId($record, $repeat_instance, $field)
-    {
-        $instance = (string) ($repeat_instance ?: 1);
-        $best = 0;
-
-        try {
-            $rows = $this->queryLogs(
-                "SELECT doc_id, record, instance, field WHERE message = 'AOBP recording stored'",
-                []
-            );
-            while ($row = db_fetch_assoc($rows)) {
-                if ((string) $row['record'] !== (string) $record) continue;
-                if ((string) $row['instance'] !== $instance)      continue;
-                if ((string) $row['field'] !== (string) $field)   continue;
-                $best = max($best, (int) $row['doc_id']);
-            }
-        } catch (Throwable $e) {
-            return 0;
-        }
-
-        return $best;
     }
 
     /** The version in this module's own config.json, or 'unknown'. */

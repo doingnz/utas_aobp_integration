@@ -1,0 +1,64 @@
+{
+  "name": "AOBP Integration",
+  "namespace": "AobpIntegration",
+  "description": "Records an AOBP blood pressure measurement from a Uscom BP+ device directly into a REDCap survey, using the BP+ JavaScript SDK. (build 1.0.60, commit dfc71b9)",
+  "version": "1.0.60",
+  "framework-version": 15,
+  "auth-ajax-actions": [
+    "save-xml"
+  ],
+  "no-auth-ajax-actions": [
+    "save-xml"
+  ],
+  "authors": [
+    {
+      "name": "Richard Scott",
+      "institution": "Uscom Ltd"
+    },
+    {
+      "name": "Oliver Stanesby",
+      "email": "oliver.stanesby@utas.edu.au",
+      "institution": "Menzies Institute for Medical Research, University of Tasmania"
+    }
+  ],
+  "project-settings": [
+    {
+      "key": "aobp-instrument",
+      "name": "Instrument that carries the AOBP controls",
+      "type": "text",
+      "required": false
+    },
+    {
+      "key": "aobp-info-instrument",
+      "name": "Instrument that uses the collapsible information panels",
+      "type": "text",
+      "required": false
+    },
+    {
+      "key": "aobp-clock-tolerance-minutes",
+      "name": "Set the device clock from this computer when it is out by more than this many minutes (blank = 5)",
+      "type": "text",
+      "required": false
+    },
+    {
+      "key": "aobp-show-recovered-warnings",
+      "name": "Show warnings on measurements that succeeded (the device retried and recovered). Off by default: they are recorded either way, and there is nothing for clinic staff to act on",
+      "type": "checkbox"
+    },
+    {
+      "key": "aobp-save-xml-file",
+      "name": "Store the raw measurement XML as a file on the record (needs seated_raw_xml / standing_raw_xml file-upload fields)",
+      "type": "checkbox"
+    },
+    {
+      "key": "aobp-trace",
+      "name": "Log every serial line to the browser console (troubleshooting only)",
+      "type": "checkbox"
+    },
+    {
+      "key": "aobp-simulator",
+      "name": "<b>TESTING ONLY — simulated BP+.</b> Takes measurements from a built-in simulator instead of a real device, so the survey, the file upload and the record can be tested without hardware. Readings are <b>fabricated</b>: the page says so on screen and every record is written with a SIMULATED device id. Never enable on a project collecting real data.",
+      "type": "checkbox"
+    }
+  ]
+}
