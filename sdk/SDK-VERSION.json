@@ -1,8 +1,16 @@
 {
     "$comment":  [
                      "Provenance for the vendored copy of the BP+ JavaScript SDK in this folder.",
-                     "Written by tools/sync-sdk.ps1. Do not edit sdk/ in place -- run the script.",
-                     "Check it with: tools/sync-sdk.ps1 -Verify"
+                     "",
+                     "sdk/ is a COPY. It is developed at the repository named in source.repository",
+                     "and changed there, never here: an edit made in this folder is lost the next",
+                     "time it is replaced, and invisible until then.",
+                     "",
+                     "Check this copy:  node test/smoke.mjs",
+                     "",
+                     "Replace this copy, or check it without a local test:",
+                     "  \u003ca checkout of https://github.com/Uscom/bpplus-redcap\u003e/tools/sync-sdk.ps1 -Consumer \u003cthis folder\u003e -Verify",
+                     "The script lives in https://github.com/Uscom/bpplus-redcap, not in this repository."
                  ],
     "sdkVersion":  "1.2.1",
     "terminalApiVersion":  "2.4",
@@ -15,7 +23,6 @@
                },
     "vendored":  {
                      "on":  "2026-09-02",
-                     "treeSha256":  "529b54a8550ecb380a67bf5810164151c2c336f73a34526cde42c0c3c8307a84",
-                     "howToVerify":  "tools/sync-sdk.ps1 -Verify"
+                     "treeSha256":  "529b54a8550ecb380a67bf5810164151c2c336f73a34526cde42c0c3c8307a84"
                  }
 }
