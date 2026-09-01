@@ -1,6 +1,8 @@
 node_modules/
 package-lock.json
 
-# Built for handover; rebuilt from the tree, not edited in place
-dist/utas_aobp_integration_v1.0.0/
+# Built by tools/package.mjs from the tree, never edited in place. The version
+# is the commit count, so the folder has a different name every time — the old
+# rule named v1.0.0 and stopped matching the moment versioning started working.
+dist/utas_aobp_integration_v*/
 dist/*.zip
