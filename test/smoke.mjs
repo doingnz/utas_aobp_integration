@@ -539,6 +539,41 @@ console.log('\na cancel says who asked for it');
     JSON.stringify({ code: deviceCancel?.code, reason: deviceCancel?.reason }));
 }
 
+// -- Is a standing measurement required? ----------------------------------
+// sys_standing_required is a calc field with @HIDDEN, and REDCap renders
+// neither on a survey page. The module found no input, read it as empty, and
+// closed the visit after the seated measurement — a participant who needed
+// standing would have gone home without it. Seen in Oliver's console log as
+// "no field named sys_standing_required on this page".
+
+console.log('\nwhether standing is required has two sources');
+
+{
+  const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+  const php = fs.readFileSync(new URL('../AobpIntegration.php', import.meta.url), 'utf8');
+
+  // The field first: it is live, so dizz or faint answered on this page counts
+  // immediately, where the server's stored calc would still be the old one.
+  const fieldAt  = app.indexOf("document.querySelector('[name=\"' + FIELD_NAMES.standing_required");
+  const configAt = app.indexOf('(window.AOBP_CONFIG || {}).standingRequired');
+  check('the page prefers a live field over the server value',
+    fieldAt > 0 && configAt > fieldAt);
+
+  check('and the server supplies one for when there is no field',
+    /'standingRequired' =>/.test(php) && /storedStandingRequired/.test(php));
+
+  // "Not required" and "not known" are different answers. Defaulting the second
+  // to the first is what ended the visit early in the first place.
+  check('not knowing is reported, not assumed',
+    /cannot tell whether a standing measurement is/.test(app));
+  check('and said once, not on every button repaint',
+    /standingUnknownSaid/.test(app));
+
+  // Null rather than 0 when the server cannot read it, for the same reason.
+  check('the server distinguishes unknown from zero',
+    /return null;/.test(php.slice(php.indexOf('storedStandingRequired'))));
+}
+
 // -- A simulated device, and how a record says so -------------------------
 // So the survey, the upload and the record can be tested where there is no BP+
 // and no cable, which is most of what needs testing. Everything downstream runs

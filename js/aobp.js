@@ -217,6 +217,10 @@
     var apiVersion = null;   // the reply to `ver`, or null if it could not be read
     var lastMeasurement = null;
 
+    // Said once per page, not once per call: standingRequired() runs on every
+    // button repaint.
+    var standingUnknownSaid = false;
+
     // Kept so a failed upload can be tried again without repeating the
     // measurement on the participant. Cleared once the file is stored.
     var pendingXml = { seated: null, standing: null };
@@ -1313,7 +1317,32 @@
     }
 
     function standingRequired() {
-      return getFieldValue(FIELD_NAMES.standing_required) === '1';
+      // The field first, where the instrument provides one: it is live, so a
+      // dizz or faint answered on this page counts immediately.
+      var onPage = document.querySelector('[name="' + FIELD_NAMES.standing_required + '"]');
+      if (onPage) return String(onPage.value) === '1';
+
+      // Otherwise what the server read for this record. sys_standing_required
+      // is a calc field with @HIDDEN and REDCap renders neither on a survey, so
+      // there is no input to read — which the module took as "not required" and
+      // closed the visit after the seated measurement. A participant who needed
+      // standing would have gone home without it.
+      var supplied = (window.AOBP_CONFIG || {}).standingRequired;
+      if (supplied !== undefined && supplied !== null && supplied !== '') {
+        return String(supplied) === '1';
+      }
+
+      // Neither. Not the same as "not required", and not something to decide by
+      // default: said once, loudly, because the alternative is a visit that
+      // finishes early and looks complete.
+      if (!standingUnknownSaid) {
+        standingUnknownSaid = true;
+        console.error('[AOBP] cannot tell whether a standing measurement is ' +
+                      'required: no ' + FIELD_NAMES.standing_required + ' field on ' +
+                      'the page and none supplied by the server. Treating it as ' +
+                      'not required, which may end the visit early.');
+      }
+      return false;
     }
 
     /**

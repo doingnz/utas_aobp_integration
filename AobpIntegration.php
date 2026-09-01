@@ -220,6 +220,46 @@ class AobpIntegration extends AbstractExternalModule
      * module at run time. Resolving it here means the import works whatever
      * this installation does with static file URLs.
      */
+    /**
+     * What REDCap has stored for sys_standing_required, or null.
+     *
+     * Null rather than 0 when it cannot be read: "not required" and "not known"
+     * are different answers, and the page says so rather than quietly finishing
+     * the visit.
+     */
+    private function storedStandingRequired($project_id, $record, $event_id, $repeat_instance)
+    {
+        if ((string) $record === '') {
+            return null;
+        }
+
+        try {
+            $data = \REDCap::getData([
+                'project_id'   => $project_id,
+                'records'      => [$record],
+                'fields'       => ['sys_standing_required'],
+                'events'       => $event_id ? [$event_id] : null,
+                'return_format' => 'array',
+            ]);
+        } catch (Throwable $e) {
+            return null;
+        }
+
+        $row = $data[$record] ?? null;
+        if (!is_array($row)) {
+            return null;
+        }
+
+        // Repeating instruments nest under repeat_instances; a flat event does
+        // not. Both shapes are read rather than assuming which project this is.
+        $instance = $repeat_instance ?: 1;
+        $value = $row['repeat_instances'][$event_id][$this->aobpInstrument()][$instance]['sys_standing_required']
+              ?? $row[$event_id]['sys_standing_required']
+              ?? null;
+
+        return ($value === null || $value === '') ? null : (string) $value;
+    }
+
     private function emitAobpConfig($project_id, $record, $event_id, $repeat_instance): void
     {
         $config = [
@@ -232,6 +272,23 @@ class AobpIntegration extends AbstractExternalModule
             'clockToleranceMinutes' => $this->clockToleranceMinutes(),
             'trace'           => (bool) $this->getProjectSetting('aobp-trace'),
             'simulator'       => (bool) $this->getProjectSetting('aobp-simulator'),
+
+            // Read here because the page cannot read it for itself.
+            //
+            // sys_standing_required is a calc field with @HIDDEN, and REDCap
+            // renders neither on a survey page — there is no input with that
+            // name in the DOM, so the module found nothing, read it as empty,
+            // and closed the visit after the seated measurement. A participant
+            // who needed standing would have gone home without it.
+            //
+            // This is REDCap's own stored value for this record, event and
+            // instance. It is what the calc last computed, so it is right
+            // except where dizz or faint are answered on this very page and
+            // not yet saved; the page prefers a live field where the
+            // instrument provides one.
+            'standingRequired' => $this->storedStandingRequired(
+                $project_id, $record, $event_id, $repeat_instance
+            ),
             // Default OFF. The TM2917 retries a determination it could not
             // measure and reports the attempt it discarded even when a later
             // one succeeded, so this fires over good readings with nothing for
