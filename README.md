@@ -524,10 +524,15 @@ take a new version.
 
 ---
 
-## Acknowledgement
+## Who to contact
+
+| | |
+|---|---|
+| The instrument, the study, the REDCap project | **Oliver Stanesby**, Menzies Institute for Medical Research, University of Tasmania — <oliver.stanesby@utas.edu.au> |
+| The module, the BP+ SDK, the device | **Richard Scott**, Uscom Ltd |
 
 The AOBP visit instrument, the field design and the operator flow this module
-follows are the work of **Oliver Stanesby**, Menzies Institute for Medical
-Research, University of Tasmania, who first brought the BP+ into a REDCap
-survey.
+follows are Oliver's work; he first brought the BP+ into a REDCap survey. Both
+authors are listed in `config.json`, which is where REDCap reads them from for
+the module list.
 

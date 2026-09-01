@@ -14,6 +14,11 @@
     {
       "name": "Richard Scott",
       "institution": "Uscom Ltd"
+    },
+    {
+      "name": "Oliver Stanesby",
+      "email": "oliver.stanesby@utas.edu.au",
+      "institution": "Menzies Institute for Medical Research, University of Tasmania"
     }
   ],
   "project-settings": [
