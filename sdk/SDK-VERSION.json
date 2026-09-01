@@ -1,0 +1,21 @@
+{
+    "$comment":  [
+                     "Provenance for the vendored copy of the BP+ JavaScript SDK in this folder.",
+                     "Written by tools/sync-sdk.ps1. Do not edit sdk/ in place -- run the script.",
+                     "Check it with: tools/sync-sdk.ps1 -Verify"
+                 ],
+    "sdkVersion":  "1.2.1",
+    "terminalApiVersion":  "2.4",
+    "source":  {
+                   "repository":  "https://github.com/Uscom/bpplus-js-sdk.git",
+                   "path":  "sdk/",
+                   "ref":  "v1.2.1",
+                   "refKind":  "tag",
+                   "committed":  "2026-09-02T00:28:23+12:00"
+               },
+    "vendored":  {
+                     "on":  "2026-09-02",
+                     "treeSha256":  "529b54a8550ecb380a67bf5810164151c2c336f73a34526cde42c0c3c8307a84",
+                     "howToVerify":  "tools/sync-sdk.ps1 -Verify"
+                 }
+}

@@ -14,6 +14,7 @@
  */
 
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import {
   unusableReason,
   parseAlerts,
@@ -37,6 +38,62 @@ function check(name, ok, detail = '') {
 // that way and surfaced as "could not run: missing ) after argument list" when
 // the operator pressed the self-test button. Importing each module is the only
 // check that means anything.
+
+// -- Is sdk/ still the copy it says it is? ------------------------------------
+// sdk/ is a vendored copy of Uscom/bpplus-js-sdk, pinned by sdk/SDK-VERSION.json.
+// An edit made here and nowhere else is lost at the next sync and invisible
+// until then -- which is not hypothetical: this copy and bpconnect's drifted
+// apart across seven files while both reported SDK_VERSION 1.0.0, and nothing
+// showed until they were diffed.
+//
+// The algorithm matches Get-SdkHash in bpplus-redcap's tools/sync-sdk.ps1, which
+// is what writes the file: every .js under sdk/ sorted by path with an ordinal
+// comparison, each hashed as UTF-8 with CRLF normalised to LF, joined as
+// "path hash" lines separated by LF, and the whole hashed again.
+
+console.log('\nvendored SDK');
+
+{
+  const sdkTreeHash = dir => {
+    const sha = data => crypto.createHash('sha256').update(data).digest('hex');
+    const walk = (d, prefix = '') => fs.readdirSync(d, { withFileTypes: true })
+      .flatMap(e => e.isDirectory()
+        ? walk(new URL(e.name + '/', d), prefix + e.name + '/')
+        : (e.name.endsWith('.js') ? [[prefix + e.name, new URL(e.name, d)]] : []));
+
+    const lines = walk(dir)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([name, url]) => {
+        const text = fs.readFileSync(url, 'utf8').replace(/\r\n/g, '\n');
+        return name + ' ' + sha(Buffer.from(text, 'utf8')) + '\n';
+      })
+      .join('');
+
+    return sha(Buffer.from(lines, 'utf8'));
+  };
+
+  const file = new URL('../sdk/SDK-VERSION.json', import.meta.url);
+
+  if (!fs.existsSync(file)) {
+    check('sdk/SDK-VERSION.json is present', false,
+      'the vendored copy cannot be traced to an upstream release');
+  } else {
+    const declared = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const { SDK_VERSION } = await import('../sdk/index.js');
+    const actual = sdkTreeHash(new URL('../sdk/', import.meta.url));
+
+    check('SDK-VERSION.json matches the SDK it describes',
+      declared.sdkVersion === SDK_VERSION,
+      'declared ' + declared.sdkVersion + ', code says ' + SDK_VERSION);
+
+    check('sdk/ has not been edited in place',
+      actual === declared.vendored?.treeSha256,
+      'recorded ' + declared.vendored?.treeSha256 + ', actual ' + actual +
+      ' -- change it upstream in Uscom/bpplus-js-sdk and re-vendor, not here');
+
+    console.log('        SDK ' + declared.sdkVersion + ' at ' + declared.source?.ref);
+  }
+}
 
 console.log('\nSDK modules parse');
 

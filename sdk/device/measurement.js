@@ -754,7 +754,14 @@ const DROPPED_FROM_RESULT = [
  * @returns {string}
  */
 export function minimalXml(xml) {
-  if (!xml || typeof DOMParser === 'undefined') return xml;
+  // Both, not just DOMParser. This parses with one and serialises with the
+  // other, so a host that has only the first gets past the guard and throws at
+  // the last line -- turning "this host cannot reduce it, so keep the whole
+  // document" into a lost measurement. Every browser has both; Node has neither
+  // until something supplies them, which is where this was found.
+  if (!xml || typeof DOMParser === 'undefined' || typeof XMLSerializer === 'undefined') {
+    return xml;
+  }
 
   const doc = new DOMParser().parseFromString(xml, 'text/xml');
   if (doc.getElementsByTagName('parsererror').length) return xml;
