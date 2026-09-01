@@ -621,6 +621,21 @@ console.log('\na granted port is picked up without asking');
   check('and a failed resume is quiet, leaving Connect where it was',
     /nothing to resume/.test(app));
 
+  // A harness whose transport hook drops the flag sends the resume to the
+  // picker, the browser refuses it without a user gesture, and the feature
+  // looks broken on the bench while working in REDCap. Both harnesses build
+  // transports themselves, so both have to pass it on.
+  for (const page of ['harness.html', 'harness-visit.html']) {
+    const html = fs.readFileSync(new URL(page, import.meta.url), 'utf8');
+    const hook = html.slice(html.indexOf('AOBP_TRANSPORT = function'));
+    const body = hook.slice(0, hook.indexOf('};'));
+    const dropped = body.split(String.fromCharCode(10)).filter(line =>
+      line.includes('new api.') && !line.includes('Simulator') && !line.includes('silent'));
+    check(page + ' passes silent to every transport it builds',
+      /function \(api, options\)/.test(body) && dropped.length === 0,
+      dropped.join(' | '));
+  }
+
   // Driven, because the checks above passed while the resume was still reaching
   // the picker: `silent` was threaded into makeTransport and not into the
   // constructor it calls, so the browser refused with "Must be handling a user

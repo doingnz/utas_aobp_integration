@@ -279,7 +279,7 @@ window.AOBP_CONFIG = {
   event_id: '1',
   repeat_instance: '1',
   pid: '0',
-  sdkUrl: new URL('../sdk/index.js?v=1.7.34', location.href).href,
+  sdkUrl: new URL('../sdk/index.js?v=1.7.35', location.href).href,
   saveXmlAsFile: false,          // no server here to receive it
   clockToleranceMinutes: 5,
   trace: true,
@@ -295,7 +295,7 @@ document.getElementById('record').addEventListener('input', function () {
 
 <!-- ?v= must match BUILD in the module script below. A query string is the only
      reliable way to force a tablet past a cached copy of the module. -->
-<script src="../js/aobp.js?v=1.7.34"></script>
+<script src="../js/aobp.js?v=1.7.35"></script>
 
 <script type="module">
 import * as sdk from '../sdk/index.js';
@@ -305,7 +305,7 @@ const $ = id => document.getElementById(id);
 // ── Build stamp ────────────────────────────────────────────────────────────
 // Bump this on every upload, and keep the ?v= on the aobp.js script tag and on
 // AOBP_CONFIG.sdkUrl in step with it.
-const BUILD = '1.7.34';
+const BUILD = '1.7.35';
 const BUILT = '2026-09-01';
 
 (function showBuild() {
@@ -354,7 +354,15 @@ const BUILT = '2026-09-01';
 // A module namespace is sealed, so the transport cannot be swapped from out
 // here. aobp.js instead offers one hook for exactly this purpose; everything
 // else it does — connect, readFeatures, measure — is the code the survey runs.
-window.AOBP_TRANSPORT = function (api) {
+window.AOBP_TRANSPORT = function (api, options) {
+  // `options.silent` has to be honoured, or this harness cannot test the thing
+  // it exists to test. The module asks for a silent transport when it tries to
+  // pick a granted device back up after a page load; a hook that drops the flag
+  // sends it to the picker, the browser refuses without a user gesture, and the
+  // resume looks broken here while working perfectly in REDCap.
+  options = options || {};
+  const silent = options.silent === true;
+
   // The simulator is a checkbox rather than an entry in the Device list,
   // because it is not a way of reaching a device — it replaces the device. The
   // list then means one thing only: how the cable is opened.
@@ -367,11 +375,11 @@ window.AOBP_TRANSPORT = function (api) {
   // says "No compatible device found" cannot distinguish a missing cable from a
   // cable whose chip simply is not Prolific.
   if (choice === 'serial-all') {
-    return new api.WebSerialTransport();
+    return new api.WebSerialTransport({ silent });
   }
 
   if (choice === 'serial') {
-    return new api.WebSerialTransport({ filters: [{ usbVendorId: 0x067B }] });
+    return new api.WebSerialTransport({ filters: [{ usbVendorId: 0x067B }], silent });
   }
 
   // WebUSB, driving the PL2303 directly. On Android this is the only route,
@@ -379,7 +387,7 @@ window.AOBP_TRANSPORT = function (api) {
   // NOT already claimed by the Prolific COM driver — see the note in the
   // diagnostics output.
   if (choice === 'usb') {
-    return new api.UsbSerialTransport({ offerAllDrivers: true });
+    return new api.UsbSerialTransport({ offerAllDrivers: true, silent });
   }
 
   // 'auto'. No local policy here: the SDK decides, and the point of this
@@ -389,10 +397,10 @@ window.AOBP_TRANSPORT = function (api) {
 
   if (pick.kind === api.TransportKind.serial) {
     // Unfiltered, matching PORT_FILTERS in aobp.js.
-    return new api.WebSerialTransport();
+    return new api.WebSerialTransport({ silent });
   }
   if (pick.kind === api.TransportKind.usbSerial) {
-    return new api.UsbSerialTransport();
+    return new api.UsbSerialTransport({ silent });
   }
   throw new Error('This browser cannot reach a BP+ on a cable. ' + pick.reason);
 };
