@@ -360,6 +360,12 @@
             <td>Troubleshooting only — turn it off afterwards</td>
           </tr>
           <tr>
+            <td>TESTING ONLY — simulated BP+</td>
+            <td>on, <em>if you have no device</em></td>
+            <td>Runs every step below without a BP+ or a cable. See
+                <strong>No device to hand?</strong></td>
+          </tr>
+          <tr>
             <td>Show warnings on measurements that succeeded</td>
             <td>off</td>
             <td>Default. The device retries and recovers on its own; those warnings
@@ -430,6 +436,25 @@
       In this order. Steps 1 and 2 are the ones no amount of testing here can settle,
       and either can invalidate what follows.
     </p>
+
+    <div class="flag">
+      <p>
+        <strong>No device to hand?</strong> Tick <em>TESTING ONLY — simulated BP+</em>
+        and every step below runs without a BP+ or a cable. Only the device itself is
+        simulated: the survey, the AJAX call, <code>storeFile</code>,
+        <code>addFileToField</code>, the instance, the marker and the record are all
+        the real thing, and they are what needs testing.
+      </p>
+      <p>
+        The readings are invented, so the page says so in a red banner above the first
+        block, and every record is written with <code>SIMULATED-</code> in front of the
+        device id — an export identifies fabricated rows without anyone having to
+        remember. Turn it off before the project sees a participant.
+      </p>
+      <p>
+        It runs at realistic speed: a seated AOBP takes as long as a seated AOBP.
+      </p>
+    </div>
 
     <div class="steps">
 

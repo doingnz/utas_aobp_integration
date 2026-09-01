@@ -456,6 +456,16 @@
         return window.AOBP_TRANSPORT(api);
       }
 
+      // A project setting, so the survey, the upload and the record can be
+      // tested where there is no BP+ and no cable — which is most of what needs
+      // testing. Everything downstream of the device runs exactly as it does for
+      // real, which is the point and also the danger: the readings are invented.
+      // Hence the banner, and the device id every record is written with.
+      if ((window.AOBP_CONFIG || {}).simulator) {
+        console.warn('[AOBP] SIMULATED DEVICE. Readings are fabricated.');
+        return new api.SimulatorTransport();
+      }
+
       var pick = api.recommendedTransport();
       var env  = pick.environment;
 
@@ -742,7 +752,14 @@
       setFieldValue(fields.hr,  bp.pr);
       setFieldValue(fields.datetime,  measurement.timestamp);
       setFieldValue(fields.guid,      measurement.guid);
-      setFieldValue(fields.device_id, measurement.deviceId);
+      // Marked in the record, not only on the screen. The simulator answers with
+      // a plausible device id — 015D90DE1A0000DA — and a fabricated reading that
+      // looks like every other reading is the one thing this feature must not
+      // produce. Whoever reads the export later was not in the room.
+      setFieldValue(fields.device_id,
+        (window.AOBP_CONFIG || {}).simulator
+          ? 'SIMULATED-' + measurement.deviceId
+          : measurement.deviceId);
 
       // The signal-to-noise ratio of the suprasystolic capture — one number per
       // measurement, however many blood-pressure determinations preceded it.
@@ -1182,6 +1199,36 @@
       });
     }
 
+    /**
+     * Say on screen, permanently, that nothing here is a real measurement.
+     *
+     * The status line cannot carry this: it is rewritten by every step of every
+     * measurement, so a warning there is gone the moment anything happens. This
+     * is its own element, above the first block, and nothing removes it.
+     */
+    function showSimulatorBanner() {
+      if (!(window.AOBP_CONFIG || {}).simulator) return;
+
+      var host = blocks.seated.status || blocks.standing.status;
+      if (!host || !host.parentNode) return;
+
+      var banner = document.createElement('div');
+      banner.id = 'aobp-simulator-banner';
+      banner.textContent =
+        'SIMULATED BP+ — no device is connected and these readings are ' +
+        'fabricated. For testing only. Do not use for participants.';
+      banner.style.background   = '#fdecea';
+      banner.style.border       = '2px solid #b71c1c';
+      banner.style.color        = '#b71c1c';
+      banner.style.borderRadius = '8px';
+      banner.style.padding      = '12px 16px';
+      banner.style.marginBottom = '12px';
+      banner.style.fontWeight   = '700';
+      banner.style.fontSize     = '16px';
+
+      host.parentNode.insertBefore(banner, host);
+    }
+
     /** Once the device is open, no block needs to offer Connect again. */
     function hideConnectButtons() {
       for (var mode in blocks) {
@@ -1570,6 +1617,7 @@
       if (button.textContent !== wanted) button.textContent = wanted;
     }
 
+    showSimulatorBanner();
     setStatus('ready', 'Connect the BP+ to begin.', 'all');
 
     // Exposed so the test harness can drive the same code the survey runs.

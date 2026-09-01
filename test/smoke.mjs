@@ -539,6 +539,43 @@ console.log('\na cancel says who asked for it');
     JSON.stringify({ code: deviceCancel?.code, reason: deviceCancel?.reason }));
 }
 
+// -- A simulated device, and how a record says so -------------------------
+// So the survey, the upload and the record can be tested where there is no BP+
+// and no cable, which is most of what needs testing. Everything downstream runs
+// exactly as it does for real — the point, and the danger.
+
+console.log('\na simulated device is declared, on screen and in the record');
+
+{
+  const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+  const php = fs.readFileSync(new URL('../AobpIntegration.php', import.meta.url), 'utf8');
+  const cfg = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
+  const setting = cfg['project-settings'].find(s => s.key === 'aobp-simulator');
+
+  check('there is a project setting for it', !!setting);
+  check('and it says what it is, in the setting name itself',
+    !!setting && /TESTING ONLY/.test(setting.name) && /fabricated/.test(setting.name));
+  check('the module passes it to the page',
+    /'simulator'\s*=>\s*\(bool\)/.test(php));
+  check('and the page uses the simulator transport when it is set',
+    /if \(\(window\.AOBP_CONFIG \|\| \{\}\)\.simulator\) \{/.test(app) &&
+    /new api\.SimulatorTransport\(\)/.test(app));
+
+  // The status line is rewritten by every step of every measurement, so a
+  // warning there is gone the moment anything happens.
+  check('the warning is its own element, not the status line',
+    /function showSimulatorBanner/.test(app) && /aobp-simulator-banner/.test(app));
+
+  // The simulator answers with a plausible device id. A fabricated reading that
+  // looks like every other reading is the one thing this must not produce —
+  // whoever reads the export later was not in the room.
+  const sim = fs.readFileSync(new URL('../sdk/transports/simulator.js', import.meta.url), 'utf8');
+  check('the simulator does report a plausible device id',
+    /DEVICE_ID = '015D90DE1A0000DA'/.test(sim));
+  check('so the record is written with a marked one',
+    /'SIMULATED-' \+ measurement\.deviceId/.test(app));
+}
+
 // -- The XML, cut down to something a text field can hold -----------------
 // Only for a project with file storage off. A REDCap text field holds 65,535
 // bytes and an AOBP result is twice that, so the choice is between stripped and

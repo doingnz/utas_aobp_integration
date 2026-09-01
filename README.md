@@ -116,6 +116,32 @@ BP+** differs — a port list on desktop, a USB device list on a tablet.
 | Show warnings on measurements that succeeded | off | The device retries and recovers; see below |
 | Store the raw measurement XML as a file | off | See **The raw XML** |
 | Log every serial line to the browser console | off | Troubleshooting only |
+| **TESTING ONLY — simulated BP+** | off | See **Testing without a device** |
+
+---
+
+## Testing without a device
+
+**TESTING ONLY — simulated BP+** takes measurements from the SDK's built-in
+simulator instead of a real device, so the survey, the AJAX call, the file upload
+and the record can all be exercised where there is no BP+ and no cable. That is
+most of what needs testing, and none of it involves the device.
+
+Everything downstream of the transport runs exactly as it does for real, which is
+the point of the setting and also its danger: **the readings are invented**, and
+the simulator answers with a plausible device id (`015D90DE1A0000DA`). Two things
+follow, both automatic:
+
+- The page shows a red banner above the first block — *"SIMULATED BP+ — no
+  device is connected and these readings are fabricated"* — in its own element,
+  because the status line is rewritten by every step of every measurement.
+- Every record is written with `SIMULATED-` in front of the device id, so an
+  export identifies fabricated rows without anyone having to remember. Whoever
+  reads it later was not in the room.
+
+The simulator runs at realistic speed: a seated AOBP takes as long as a seated
+AOBP. That is deliberate — a timing bug that only appears at real speed is one
+worth finding here.
 
 ---
 

@@ -231,6 +231,7 @@ class AobpIntegration extends AbstractExternalModule
             'saveXmlAsFile'   => (bool) $this->getProjectSetting('aobp-save-xml-file'),
             'clockToleranceMinutes' => $this->clockToleranceMinutes(),
             'trace'           => (bool) $this->getProjectSetting('aobp-trace'),
+            'simulator'       => (bool) $this->getProjectSetting('aobp-simulator'),
             // Default OFF. The TM2917 retries a determination it could not
             // measure and reports the attempt it discarded even when a later
             // one succeeded, so this fires over good readings with nothing for
