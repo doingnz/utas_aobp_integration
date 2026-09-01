@@ -408,21 +408,22 @@
           </tr>
           <tr>
             <td>Removed</td>
-            <td class="mono">repeat_btn, repeat_btn_standing</td>
-            <td>Repeat Measurement ran the identical call as Start. Start now renames
-                itself to <strong>Repeat Seated BP</strong> once that position has a
-                reading — one control per position, saying what pressing it will do</td>
+            <td class="mono">repeat_btn, repeat_btn_standing<br>
+                seated_cancel_btn, standing_cancel_btn</td>
+            <td>All three did what the Start button now does. It renames itself:
+                <strong>Repeat Seated BP</strong> once that position has a reading, and
+                <strong>Cancel Seated BP</strong> while the cuff is inflating. One
+                control per position, saying what pressing it will do — where there
+                were three, two of them disabled at any moment</td>
           </tr>
           <tr>
             <td>Added</td>
             <td class="mono">seated_snr, standing_snr<br>
-                seated_cancel_btn, standing_cancel_btn<br>
                 ui_alerts_seated, ui_alerts_standing<br>
                 ui_visit_state_seated, ui_visit_state_standing</td>
             <td>Signal-to-noise ratio as the device reports it, hidden and read-only
-                like the other device-written fields; Cancel while a measurement is
-                running; the device's own account of a measurement; and what the visit
-                still needs</td>
+                like the other device-written fields; the device's own account of a
+                measurement; and what the visit still needs</td>
           </tr>
         </tbody>
       </table>

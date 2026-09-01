@@ -17,7 +17,6 @@
  *
  *   #connect-bp-btn        starts the browser's serial port picker
  *   #status-display        the single large status line
- *   #cancel-bp-btn         optional; live only while a measurement is running
  *   #alerts-display        optional; what the device said about the measurement
  *   #visit-state           optional; what the record still needs, and whether
  *                          it is ready to submit
@@ -163,7 +162,6 @@
     function blockFor(mode) {
       return {
         connect: control('connect-bp-btn', mode),
-        cancel:  control('cancel-bp-btn', mode),
         status:  control('status-display', mode),
         alerts:  control('alerts-display', mode),
         visit:   control('visit-state', mode),
@@ -1419,11 +1417,51 @@
     }
 
     if (ui.seated) {
-      ui.seated.addEventListener('click', function () { takeMeasurement('seated'); });
+      ui.seated.addEventListener('click', function () { startOrCancel('seated'); });
     }
 
     if (ui.standing) {
-      ui.standing.addEventListener('click', function () { takeMeasurement('standing'); });
+      ui.standing.addEventListener('click', function () { startOrCancel('standing'); });
+    }
+
+    /**
+     * The one button for a position, doing whatever it currently says.
+     *
+     * Start, Repeat and Cancel were three controls for one measurement — two of
+     * them disabled at any moment, and Cancel disabled for all but the ninety
+     * seconds it was wanted. The button now says what pressing it will do, and
+     * pressing it does that.
+     */
+    function startOrCancel(mode) {
+      if (busy && currentMode === mode) {
+        cancelMeasurement(mode);
+        return;
+      }
+      takeMeasurement(mode);
+    }
+
+    /**
+     * Stop the measurement on the arm.
+     *
+     * Disabled immediately: the device answers a cancel with one F 02 and one
+     * M 02, and a second `c` arriving between them has nothing left to cancel.
+     * The measurement's own promise rejects with F 02, so the status line and
+     * the buttons are put right by the handler that started it — there is
+     * nothing to restore here.
+     */
+    async function cancelMeasurement(mode) {
+      if (!device) return;
+
+      setEnabled(mode === 'standing' ? ui.standing : ui.seated, false);
+      setStatus('normal', 'Cancelling…', mode);
+
+      try {
+        await device.cancel();
+      } catch (error) {
+        // A cancel that cannot be sent is not itself a measurement failure, and
+        // the measurement will report whatever actually happened to it.
+        console.warn('[AOBP] cancel could not be sent:', error.message);
+      }
     }
 
     /**
@@ -1499,6 +1537,10 @@
       // it, and the operator must not be handed live Start buttons for it.
       var linked = !!device && !!features && !busy;
 
+      // The position being measured keeps its button, because that button is
+      // now how a measurement is cancelled.
+      var stopping = function (which) { return busy && currentMode === which; };
+
       // A BP+ that is not in AOBP mode measures something else. Suprasystolic
       // mode produces a central pressure waveform from one inflation — a
       // perfectly good measurement, and not the three-reading average this
@@ -1511,13 +1553,10 @@
       // where a check at connect can be trusted for the whole visit.
       var ready = linked && deviceIsAobp();
 
-      setEnabled(ui.seated,   ready);
-      setEnabled(ui.standing, ready);
+      setEnabled(ui.seated,   ready || stopping('seated'));
+      setEnabled(ui.standing, ready || stopping('standing'));
       relabel('seated',   ui.seated);
       relabel('standing', ui.standing);
-      for (var mode in blocks) {
-        setEnabled(blocks[mode].cancel, !!device && busy);
-      }
 
       // Both gated on `linked`, not `ready`: Set AOBP mode is how the wrong
       // mode gets fixed, so gating it on being in the right mode already would
@@ -1626,58 +1665,6 @@
       });
     }
 
-    /**
-     * The versions and mode, for a reader who can act on them.
-     *
-     * Absent from the visit instrument on purpose. The same module serves both,
-     * and which one it is showing is decided by whether the instrument provides
-     * this element rather than by a setting.
-     */
-    function showDeviceInfo() {
-      if (!ui.info) return;
-      if (!features) { ui.info.innerText = ''; return; }
-
-      var newline = String.fromCharCode(10);
-      ui.info.style.background   = '#f1f5f9';
-      ui.info.style.border       = '1px solid #d8dee6';
-      ui.info.style.borderRadius = '8px';
-      ui.info.style.padding      = '10px 14px';
-      ui.info.style.marginTop    = '10px';
-      ui.info.style.fontFamily   = 'ui-monospace, Consolas, monospace';
-      ui.info.style.fontSize     = '13px';
-      ui.info.innerText = [
-        'Device ' + features.deviceId,
-        'Software ' + features.softwareVersion + ' · firmware ' + features.firmwareVersion,
-        'Feature list ' + features.version + ' · Terminal API ' + (apiVersion || 'unknown'),
-        'Mode ' + features.measureModeInfo.label,
-      ].join(newline);
-    }
-
-    function wireCancel(mode) {
-      var button = blocks[mode].cancel;
-
-      once(button, async function () {
-        if (!device) return;
-
-        // Disabled immediately: the device answers a cancel with one F 02 and
-        // one M 02, and a second `c` arriving between them has nothing left to
-        // cancel. The measurement's own promise rejects with F 02, so the
-        // status line and the buttons are restored by the handler that started
-        // it — there is nothing to put right here.
-        setEnabled(button, false);
-        setStatus('normal', 'Cancelling…', currentMode);
-        try {
-          await device.cancel();
-        } catch (error) {
-          // A cancel that cannot be sent is not itself a measurement failure,
-          // and the measurement will report whatever actually happened to it.
-          console.warn('[AOBP] cancel could not be sent:', error.message);
-        }
-      });
-    }
-
-    wireCancel('seated');
-    wireCancel('standing');
 
     /** Whether this position already has a reading stored. */
     function hasReading(mode) {
@@ -1698,9 +1685,14 @@
     function relabel(mode, button) {
       if (!button || !startLabel[mode]) return;
 
-      var wanted = hasReading(mode)
-        ? startLabel[mode].replace(/\bStart\b/, 'Repeat')
-        : startLabel[mode];
+      var wanted;
+      if (busy && currentMode === mode) {
+        wanted = startLabel[mode].replace(/\bStart\b/, 'Cancel');
+      } else if (hasReading(mode)) {
+        wanted = startLabel[mode].replace(/\bStart\b/, 'Repeat');
+      } else {
+        wanted = startLabel[mode];
+      }
 
       if (button.textContent !== wanted) button.textContent = wanted;
     }

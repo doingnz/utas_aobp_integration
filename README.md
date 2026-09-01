@@ -171,7 +171,6 @@ The module looks for these elements on the AOBP instrument:
 | `#connect-bp-btn` | Opens the browser's serial port picker |
 | `#start-seated-btn` | Seated measurement |
 | `#start-standing-btn` | Standing measurement |
-| `#cancel-bp-btn` | Optional. Cancels the measurement in progress |
 | `#set-aobp-mode-btn` | Optional. Puts the device into BP+ AOBP mode |
 | `#ping-bp-btn` | Optional. Confirms the link is live and the device still usable |
 | `#visit-state` | Optional. What the record still needs, and whether it may be submitted |
@@ -281,12 +280,15 @@ slipped — can be taken again without reloading the page. A repeat replaces the
 stored reading for that position. Only a measurement actually in progress takes
 the buttons away.
 
-If the instrument carries a `#cancel-bp-btn`, it is live only while the cuff is
-inflating and stops the measurement at the device — `c` is the one command the
-BP+ accepts mid-measurement. The measurement then fails the way any other device
-failure does, the status line says so, and the buttons re-enable so it can be
-repeated. The element is optional: without it the module behaves exactly as
-before.
+**Start is also Cancel.** While the cuff is inflating, the button that started
+the measurement reads *Cancel Seated BP* and stops it — `c` is the one command
+the BP+ accepts mid-measurement. The measurement then fails the way any other
+device failure does, the status line says so, and the button goes back to
+*Repeat Seated BP* or *Start Seated BP*.
+
+One control per position, saying what pressing it will do. Start, Repeat and
+Cancel were three buttons for one measurement, two of them disabled at any
+moment and Cancel disabled for all but the ninety seconds it was wanted.
 
 ---
 

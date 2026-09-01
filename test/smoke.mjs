@@ -89,7 +89,6 @@ if (!JSDOM) {
     <button id="connect-bp-btn"></button>
     <button id="start-seated-btn"></button>
     <button id="start-standing-btn"></button>
-    <button id="cancel-bp-btn"></button>
     <button id="ping-bp-btn"></button>
     <button id="set-aobp-mode-btn"></button>
     <div id="visit-state"></div>
@@ -118,7 +117,7 @@ if (!JSDOM) {
   check('the status line was rendered', !!el('status-display').innerText);
   check('the visit state was rendered', !!el('visit-state').innerText);
   check('every control starts disabled',
-    ['start-seated-btn', 'start-standing-btn', 'cancel-bp-btn', 'ping-bp-btn',
+    ['start-seated-btn', 'start-standing-btn', 'ping-bp-btn',
      'set-aobp-mode-btn'].every(id => el(id).disabled === true));
 
   // One block means both positions resolve to the same Connect button. Wiring
@@ -139,14 +138,12 @@ if (!JSDOM) {
   const twoBlock = `<!doctype html><html><body>
     <button id="connect-bp-btn-seated"></button>
     <button id="start-seated-btn">Start seated</button>
-    <button id="cancel-bp-btn-seated"></button>
     <div id="status-display-seated"></div>
     <div id="alerts-display-seated"></div>
     <div id="visit-state-seated"></div>
     <div id="seated-results-panel"></div>
     <button id="connect-bp-btn-standing"></button>
     <button id="start-standing-btn">Start standing</button>
-    <button id="cancel-bp-btn-standing"></button>
     <div id="status-display-standing"></div>
     <div id="alerts-display-standing"></div>
     <div id="visit-state-standing"></div>
@@ -173,13 +170,25 @@ if (!JSDOM) {
     !!el2('status-display-seated').innerText && !!el2('status-display-standing').innerText);
   check('each block got its own visit state',
     !!el2('visit-state-seated').innerText && !!el2('visit-state-standing').innerText);
-  check('both cancel buttons start disabled',
-    el2('cancel-bp-btn-seated').disabled && el2('cancel-bp-btn-standing').disabled);
   // One control per position, saying what pressing it will do. A separate
   // Repeat button sat beside Start running the identical call, which gave the
   // operator two ways to do one thing and no way to tell them apart.
   check('Start says Start before there is anything to repeat',
     el2('start-seated-btn').textContent.trim() === 'Start seated');
+
+  // Start, Repeat and Cancel were three controls for one measurement, two of
+  // them disabled at any moment and Cancel disabled for all but the ninety
+  // seconds it was wanted. One button now says what pressing it will do.
+  const app2 = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+  check('there is no cancel button left to look for',
+    !app2.includes('cancel-bp-btn'));
+  check('the Start button cancels while a measurement is running',
+    /function startOrCancel/.test(app2) &&
+    /if \(busy && currentMode === mode\) \{/.test(app2));
+  check('and says Cancel while it does',
+    /replace\(.{0,12}Start.{0,4}, 'Cancel'\)/.test(app2));
+  check('so it stays live for the position being measured',
+    /ready \|\| stopping\('seated'\)/.test(app2));
 }
 
 
