@@ -578,13 +578,21 @@ console.log('\na cancel says who asked for it');
   await new Promise(resolve => setTimeout(resolve, 40));
   await device.cancel();
 
-  let hostCancel = null;
-  try { await measuring; } catch (error) { hostCancel = error; }
+  // Bounded, because an unbounded await turns a cancel that never arrives into
+  // a suite that never finishes — seen roughly one run in three, stopping dead
+  // here with every earlier check passed and no failure reported. A hanging
+  // test says less than a failing one.
+  const settled = promise => Promise.race([
+    promise.then(() => null).catch(error => error),
+    new Promise(resolve => setTimeout(() => resolve('TIMED OUT'), 10000)),
+  ]);
+
+  const hostCancel = await settled(measuring);
 
   check('a cancel the host sent is tagged as the host asking',
     hostCancel?.code === ResultCode.cancelled &&
     hostCancel?.reason === ErrorReason.cancelledByHost,
-    JSON.stringify({ code: hostCancel?.code, reason: hostCancel?.reason }));
+    String(hostCancel?.code ?? hostCancel) + ' reason=' + String(hostCancel?.reason));
 
   // The device's own stop must NOT be tagged, or the wording is wrong the
   // other way round.
@@ -596,13 +604,12 @@ console.log('\na cancel says who asked for it');
   // is the operator reaching for the button, not the host asking.
   await second._session.sendImmediate('c' + String.fromCharCode(13, 10));
 
-  let deviceCancel = null;
-  try { await running; } catch (error) { deviceCancel = error; }
+  const deviceCancel = await settled(running);
 
   check('a stop that the host did not ask for is not tagged',
     deviceCancel?.code === ResultCode.cancelled &&
     deviceCancel?.reason === undefined,
-    JSON.stringify({ code: deviceCancel?.code, reason: deviceCancel?.reason }));
+    String(deviceCancel?.code ?? deviceCancel) + ' reason=' + String(deviceCancel?.reason));
 }
 
 // -- Picking the device back up after a page change ------------------------
