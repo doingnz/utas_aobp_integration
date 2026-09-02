@@ -395,9 +395,8 @@ file visible on the form and downloadable afterwards. **The instance is not
 optional here:** `aobp_visit` repeats, and a file filed without one lands on the
 first instance whatever visit it came from.
 
-`\REDCap::saveFile()` is not a REDCap method. This module called it, inherited
-from `aobp_integration_v1.0.1`, and it would have failed with *undefined method*
-the first time it ran.
+Note the method names: `storeFile()` and `addFileToField()`. There is no
+`\REDCap::saveFile()`, however plausible it reads.
 
 **What the text field then holds.** A marker, and never the XML — the raw XML is
 not written to the field at all while file storage is on:
@@ -530,8 +529,7 @@ node test/smoke.mjs
 
 It loads `js/aobp.js` against a stand-in instrument and fails if the module does
 not start — `node --check` only parses, and a value read before it was assigned
-is exactly the fault that once shipped a build with the whole module dead on
-load. It also covers the SDK's judgement on whether a result is a reading at
+leaves a module that loads and does nothing, with no error to say so. It also covers the SDK's judgement on whether a result is a reading at
 all. The jsdom half is skipped when jsdom is absent; the rest always runs.
 
 The module offers one hook for this and nothing else: if `window.AOBP_TRANSPORT`

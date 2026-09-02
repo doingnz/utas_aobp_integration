@@ -42,9 +42,8 @@ function check(name, ok, detail = '') {
 // -- Is sdk/ still the copy it says it is? ------------------------------------
 // sdk/ is a vendored copy of Uscom/bpplus-js-sdk, pinned by sdk/SDK-VERSION.json.
 // An edit made here and nowhere else is lost at the next sync and invisible
-// until then -- which is not hypothetical: this copy and bpconnect's drifted
-// apart across seven files while both reported SDK_VERSION 1.0.0, and nothing
-// showed until they were diffed.
+// until then. A version number records only what nobody changed, so this checks
+// a hash of the folder: two copies can report the same SDK_VERSION and differ.
 //
 // The algorithm matches Get-SdkHash in bpplus-redcap's tools/sync-sdk.ps1, which
 // is what writes the file: every .js under sdk/ sorted by path with an ordinal

@@ -678,12 +678,9 @@ SELECT doc_id, doc_name, doc_size, stored_date, delete_date
 
     <div class="flag">
       <p>
-        <strong><code>\REDCap::saveFile()</code> does not exist.</strong> It was in
-        <code>aobp_integration_v1.0.1/ajax.php</code> and we carried it forward rather
-        than substituting a guess. It appears nowhere in REDCap and nowhere in any
+        <strong><code>\REDCap::saveFile()</code> does not exist.</strong> It appears nowhere in REDCap and nowhere in any
         published module — a search of every public PHP repository returns no use of it
-        at all, against sixteen for <code>storeFile</code>. It would have failed with
-        <em>undefined method</em> the first time a measurement finished.
+        at all, against sixteen for <code>storeFile</code>. Anything calling it fails with <em>undefined method</em> the first time it runs.
       </p>
     </div>
 
