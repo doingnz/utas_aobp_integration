@@ -231,6 +231,7 @@
     var pendingXml = { seated: null, standing: null };
     var lastClockSync = null;
     var busy = false;                 // a measurement is on the arm right now
+    var filing = false;               // a recording is on its way to the server
     var seatedDone = false;
     var standingDone = false;
     var measurementComplete = false;
@@ -539,8 +540,127 @@
     function patientId() {
       var cfg = window.AOBP_CONFIG || {};
       var raw = String(cfg.record === undefined || cfg.record === null ? '' : cfg.record);
-      var safe = raw.replace(/[^A-Za-z0-9-]/g, '-').slice(0, 64);
+
+      // Sanitised by the SDK, never by a copy of the rule kept here. Three
+      // consumers each had their own, and all three went on enforcing
+      // letters-digits-hyphen after the SDK had relaxed to what the
+      // specification actually allows.
+      if (!sdk || typeof sdk.sanitisePatientId !== 'function') {
+        console.warn('[AOBP] this SDK cannot check a patient ID, so none was sent');
+        return '';
+      }
+
+      var safe = sdk.sanitisePatientId(raw);
+      var limit = sdk.PATIENT_ID_MAX_LENGTH || 64;
+
+      // Never truncated. Shortening an identifier is how two participants come
+      // to share one, which would undo the only thing the value is for.
+      if (safe.length > limit) {
+        console.warn('[AOBP] the patient ID came to ' + safe.length +
+                     ' characters and the device takes ' + limit + ', so none was sent');
+        return '';
+      }
+
       return safe;
+    }
+
+    /**
+     * Tell this page's form which document the file field now holds.
+     *
+     * REDCap posts the value a File Upload field was RENDERED with. This page
+     * rendered before the recording existed, so the form still says that field
+     * is empty -- and submitting an empty file field is how REDCap deletes an
+     * edoc, by setting delete_date on its metadata. Writing the document id
+     * here makes the submit post back the value that is already stored, so it
+     * changes nothing.
+     *
+     * This is what REDCap's own upload dialog does with the id it gets, which
+     * is why uploading a file by hand and then saving does not destroy it.
+     *
+     * Selected as an input, deliberately. The hidden input carries the field
+     * name and no id, and the download link beside it carries the same NAME --
+     * so document.getElementsByName() hands back the anchor as readily as the
+     * input, and getElementById() finds neither.
+     */
+    function adoptDocId(name, docId) {
+      if (!name) return;
+
+      if (!docId) {
+        console.warn('[AOBP] the server filed the recording but did not say which ' +
+                     'document it is, so the form cannot be told. Saving the page ' +
+                     'will detach it.');
+        return;
+      }
+
+      var input = document.querySelector('input[type="hidden"][name="' + name + '"]');
+      if (!input) {
+        console.warn('[AOBP] no hidden input named "' + name + '" on this page, so the ' +
+                     'form still holds the value it was rendered with. Saving the page ' +
+                     'will detach the recording that was just filed.');
+        return;
+      }
+
+      input.value = String(docId);
+    }
+
+    /**
+     * The device timestamp, in the only format REDCap will store as a datetime.
+     *
+     * The device writes ISO 8601 with no zone -- 2026-03-20T03:10:52 -- and
+     * REDCap wants a space where the T is. Only the separator moves. Reparsing
+     * through a Date would put the browser's timezone between the device and
+     * the record, and a measurement time that silently shifts an hour is the
+     * kind of thing nobody notices until the data is analysed.
+     */
+    function redcapTimestamp(value) {
+      var text = String(value === undefined || value === null ? '' : value);
+      return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(text)
+        ? text.replace('T', ' ')
+        : text;
+    }
+
+    /**
+     * REDCap's own save controls, held shut while a measurement is in flight.
+     *
+     * Two reasons, and the second is the sharp one. A submit part-way through a
+     * measurement saves half a reading. And a submit in the moment between the
+     * server attaching the recording and this page being told its document id
+     * would post the empty value the page was rendered with -- which is how
+     * REDCap deletes an edoc.
+     *
+     * Matched on the name REDCap gives them rather than on any one id, because
+     * a data entry form has several save buttons and a survey has a single
+     * Submit. Matching nothing is not a fault: the test harness has no such
+     * control, and neither would a page whose markup has moved on.
+     */
+    function setSubmitEnabled(enabled) {
+      var controls = document.querySelectorAll('[name^="submit-btn"], [id^="submit-btn"]');
+      for (var i = 0; i < controls.length; i++) {
+        controls[i].disabled = !enabled;
+      }
+    }
+
+    /**
+     * Why this page cannot be written to, or null when it can.
+     *
+     * Judged on whether the page has any save control, NOT on whether the
+     * fields are read-only. Every reading field on this instrument is
+     * @READONLY -- which stops an operator typing over a value the device
+     * wrote, and does not stop the module writing it -- so a test that looked
+     * at the fields would refuse to measure on every page.
+     *
+     * A form REDCap has locked carries no save or submit button at all, which
+     * is the thing that actually decides whether a measurement can be kept.
+     */
+    function readOnlyReason() {
+      if (!window.AOBP_MODULE) return null;
+
+      if (document.querySelector('[name^="submit-btn"], [id^="submit-btn"]')) {
+        return null;
+      }
+
+      return 'This page is read-only, so a measurement taken here could not be ' +
+             'saved. Open the record for editing first.';
     }
 
     /**
@@ -779,7 +899,7 @@
       setFieldValue(fields.sys, bp.sys);
       setFieldValue(fields.dia, bp.dia);
       setFieldValue(fields.hr,  bp.pr);
-      setFieldValue(fields.datetime,  measurement.timestamp);
+      setFieldValue(fields.datetime,  redcapTimestamp(measurement.timestamp));
       setFieldValue(fields.guid,      measurement.guid);
       // Marked in the record, not only on the screen. The simulator answers with
       // a plausible device id — 015D90DE1A0000DA — and a fabricated reading that
@@ -941,6 +1061,19 @@
       // called one for months, and nothing was ever there to answer it.
       pendingXml[mode] = xml;
 
+      // Held shut across the upload as well as the measurement, and reopened
+      // only after adoptDocId() has told the form which document to keep.
+      filing = true;
+      updateButtons();
+      try {
+        return await sendXml(mode, xml);
+      } finally {
+        filing = false;
+        updateButtons();
+      }
+    }
+
+    async function sendXml(mode, xml) {
       var em = window.AOBP_MODULE;
       if (!em || typeof em.ajax !== 'function') {
         uploadFailed(mode, 'This page did not load the module AJAX object.');
@@ -950,12 +1083,14 @@
       try {
         var reply = await em.ajax('save-xml', { mode: mode, xml: xml });
 
-        if (!reply || reply.status !== 'success') {
+        if (!reply || reply.status !== 'saved') {
           uploadFailed(mode, (reply && reply.message) || 'The server did not say why.');
           return;
         }
 
-        console.log('[AOBP] stored ' + reply.filename + ' in ' + reply.field);
+        console.log('[AOBP] filed ' + reply.filename + ' into ' + reply.field +
+                    ' as document ' + reply.doc_id);
+        adoptDocId(reply.field, reply.doc_id);
         pendingXml[mode] = null;
         hideResend(mode);
         await markStored(mode, xml, reply);
@@ -980,10 +1115,15 @@
 
       var digest = await sha256Hex(xml);
 
+      // doc= ties this row to the document in an export, where the file itself
+      // is a separate download. Left out rather than written as "undefined"
+      // when the reply did not carry one: a field naming a document that does
+      // not exist is worse than one that stays quiet about it.
       setFieldValue(fields.xml,
         'stored-as-file' +
         ' field=' + (reply.field || '?') +
         ' filename=' + (reply.filename || '?') +
+        (reply.doc_id ? ' doc=' + reply.doc_id : '') +
         ' bytes=' + byteLength(xml) +
         ' sha256=' + (digest || 'unavailable') +
         ' at=' + new Date().toISOString());
@@ -1565,6 +1705,12 @@
       setEnabled(ui.setAobp,  linked && canSetAobpMode());
       setEnabled(ui.ping,     linked);
 
+      // REDCap's own Submit, shut while anything is in flight. A submit during
+      // a measurement saves half a reading; a submit between the recording
+      // being filed and this page being told its document id posts the empty
+      // value the page was rendered with, which deletes the edoc.
+      setSubmitEnabled(!busy && !filing);
+
       renderVisitState();
     }
 
@@ -1698,8 +1844,18 @@
     }
 
     showSimulatorBanner();
-    setStatus('ready', 'Connect the BP+ to begin.', 'all');
-    resumeConnection();
+
+    // A page nobody can save. REDCap renders a survey response that way to a
+    // user without "Edit survey responses", and measuring into it would fill
+    // fields whose values can never be stored.
+    var locked = readOnlyReason();
+    if (locked) {
+      setStatus('error', locked, 'all');
+      updateButtons();
+    } else {
+      setStatus('ready', 'Connect the BP+ to begin.', 'all');
+      resumeConnection();
+    }
 
     // Exposed so the test harness can drive the same code the survey runs.
     window.AOBP = {

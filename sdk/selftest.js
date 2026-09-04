@@ -156,10 +156,73 @@ export async function run() {
   equal('command: firmware start',
     commands.firmwareUpdateStart(2882343476, 468448, 512), 'w 2882343476,468448,512');
 
-  await throws('command: patient ID with a comma is refused',
-    () => commands.startMeasurement({ patientId: 'SMITH, JOHN' }), ResultCode.invalidCommand);
-  await throws('command: patient ID with an angle bracket is refused',
-    () => commands.startMeasurement({ patientId: 'A<B' }), ResultCode.invalidCommand);
+  // The patient ID rule is the requirements specification's, not a tighter one
+  // of our own: printable ASCII with four exceptions. It is the only thing
+  // between a value and a result file that will not parse, so both halves are
+  // checked -- what it refuses, and what it must not refuse.
+  for (const [what, value] of Object.entries({
+    'a comma':            'SMITH, JOHN',
+    'a less-than':        'A<B',
+    'a greater-than':     'A>B',
+    'an ampersand':       'Smith & Co',
+    'a line feed':        'ABC\nDEF',
+    'a carriage return':  'ABC\rDEF',
+    'a tab':              'ABC\tDEF',
+    'a non-ASCII letter': 'Muller-é',
+    'a DEL':              'ABCDEF',
+  })) {
+    await throws(`command: patient ID with ${what} is refused`,
+      () => commands.startMeasurement({ patientId: value }), ResultCode.invalidCommand);
+  }
+
+  await throws('command: patient ID over 64 characters is refused',
+    () => commands.startMeasurement({ patientId: 'A'.repeat(65) }), ResultCode.invalidCommand);
+
+  // Every one of these was refused by the old letters-digits-hyphen rule and is
+  // legal under the specification. A GUID and a plain alphanumeric ID are the
+  // intended use; the rest simply must not be blocked.
+  for (const [what, value] of Object.entries({
+    'a GUID':          'cb4b4513-c4f6-c847-0986-a0f7aaa7e07f',
+    'a composed ID':   'REDCAP-11-2',
+    'a space':         'STUDY 014',
+    'a double quote':  'ID"14"',
+    'an underscore':   'study_014',
+    'a dot and slash': 'v1.2/site-3',
+    'braces':          '{cb4b4513}',
+    'exactly 64':      'A'.repeat(64),
+  })) {
+    equal(`command: patient ID with ${what} is accepted`,
+      commands.startMeasurement({ patientId: value }), `s 0,${value}`);
+  }
+
+  // sanitisePatientId() repairs where validatePatientId() refuses. A caller
+  // composing a value out of parts it does not control needs the first.
+  equal('sanitise: forbidden characters become the replacement',
+    commands.sanitisePatientId('Smith & Co, Ltd'), 'Smith - Co- Ltd');
+  equal('sanitise: non-ASCII is replaced',
+    commands.sanitisePatientId('Muller-é'), 'Muller--');
+  equal('sanitise: a legal value is untouched',
+    commands.sanitisePatientId('REDCAP-11-2'), 'REDCAP-11-2');
+  equal('sanitise: the replacement is the caller\'s',
+    commands.sanitisePatientId('a,b', ''), 'ab');
+
+  // Length is deliberately untouched: truncating an identifier is how two
+  // participants come to share one, so the caller decides what to do.
+  equal('sanitise: length is left to the caller',
+    commands.sanitisePatientId('A'.repeat(80)).length, 80);
+
+  // The written-out character class and the map of reasons have to agree, or a
+  // rejection could name a character the sanitiser leaves in place.
+  for (const character of Object.keys(commands.PATIENT_ID_FORBIDDEN)) {
+    equal(`sanitise: it replaces "${character}", which validate refuses`,
+      commands.sanitisePatientId(`A${character}B`), 'A-B');
+  }
+
+  // What sanitising produces must then pass validation, or the two disagree
+  // about the same rule.
+  equal('sanitise: the result passes validation',
+    commands.startMeasurement({ patientId: commands.sanitisePatientId('a,b<c>d&eé') }),
+    's 0,a-b-c-d-e-');
   await throws('command: AOBP delay above 900 s is refused',
     () => commands.startMeasurement({ aobp: { bodyPosition: 'seated', initialDelaySeconds: 901 } }),
     ResultCode.invalidCommand);

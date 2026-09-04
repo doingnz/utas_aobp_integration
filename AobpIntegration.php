@@ -4,6 +4,7 @@ namespace AobpIntegration;
 
 use ExternalModules\AbstractExternalModule;
 use Exception;
+use Throwable;
 
 /**
  * AOBP Integration.
@@ -21,6 +22,25 @@ class AobpIntegration extends AbstractExternalModule
     /** Used when the project setting is blank. */
     private const DEFAULT_AOBP_INSTRUMENT = 'aobp_visit';
     private const DEFAULT_INFO_INSTRUMENT = 'info';
+
+    /**
+     * The largest recording save-xml will accept.
+     *
+     * Measured, not guessed. A pressure wave is base64 of 16-bit samples at
+     * 200 Hz, so 8/3 of a byte per sample:
+     *
+     *   single suprasystolic result                          0.08 MB
+     *   5-determination AOBP, as recorded                    0.13 MB
+     *   5 x 75 s, the longest the device records today       0.25 MB
+     *   5 x 180 s with a 30 s suprasystolic, the most the
+     *     hardware could ever produce                        0.53 MB
+     *
+     * 1 MB is loose above that on purpose. The limit exists to stop an
+     * unauthenticated endpoint being used to store arbitrary files, and an
+     * abuser is no more deterred by a tight fit than by a generous one -- while
+     * a tight fit rejects a measurement already taken on a participant.
+     */
+    private const MAX_RECORDING_BYTES = 1048576;
 
     public function redcap_survey_page_top(
         $project_id,
@@ -86,14 +106,62 @@ class AobpIntegration extends AbstractExternalModule
             return ['status' => 'error', 'message' => 'Storing the XML as a file is not enabled for this project.'];
         }
 
+        // This action is declared in no-auth-ajax-actions, because a survey
+        // respondent is not logged in. So everything below assumes the caller is
+        // unauthenticated and possibly not the module's own page: these checks
+        // are what stands between a survey and an endpoint that writes files.
+        //
+        // The instrument first. The module only puts its JavaScript on the AOBP
+        // instrument, so a call naming anything else did not come from a page
+        // this module wrote. Logged with the value received, because if the
+        // framework ever supplies this differently the symptom is that filing
+        // stops entirely, and the log is what says why in one look.
+        if ($instrument !== $this->aobpInstrument()) {
+            $this->log('AOBP recording refused', [
+                'reason'     => 'not the AOBP instrument',
+                'instrument' => (string) $instrument,
+                'record'     => (string) $record,
+            ]);
+            return ['status' => 'error', 'message' => 'This is not the AOBP instrument.'];
+        }
+
         $mode = $payload['mode'] ?? '';
         $xml  = $payload['xml'] ?? '';
 
         if ($mode !== 'seated' && $mode !== 'standing') {
             return ['status' => 'error', 'message' => 'Unknown measurement mode.'];
         }
-        if ($xml === '' || strpos($xml, '<BPplus') === false) {
+
+        // A payload is whatever was posted, so it can be an array or a number as
+        // easily as a string. strpos() on an array is a TypeError in PHP 8.
+        if (!is_string($xml)) {
             return ['status' => 'error', 'message' => 'That does not look like a BP+ measurement.'];
+        }
+
+        // Shaped like a result document, not merely containing the word. A
+        // substring test alone would accept any payload with "<BPplus" buried
+        // anywhere in it, which makes this a general-purpose place to put a file.
+        $trimmed = ltrim($xml);
+        $startsRight = strncmp($trimmed, '<?xml', 5) === 0 || strncmp($trimmed, '<BPplus', 7) === 0;
+
+        if (!$startsRight || strpos($xml, '<BPplus') === false || strpos($xml, '</BPplus>') === false) {
+            return ['status' => 'error', 'message' => 'That does not look like a BP+ measurement.'];
+        }
+
+        // A pressure wave is base64 of 16-bit samples at 200 Hz, so the largest
+        // result the hardware can produce -- five 180-second determinations with
+        // a 30-second suprasystolic -- is about 0.53 MB. The limit is loose above
+        // that deliberately: an abuser is no more deterred by a tight fit than a
+        // generous one, while a tight fit rejects a measurement already taken on
+        // a participant.
+        if (strlen($xml) > self::MAX_RECORDING_BYTES) {
+            $this->log('AOBP recording refused', [
+                'reason' => 'over the size limit',
+                'record' => (string) $record,
+                'bytes'  => strlen($xml),
+                'limit'  => self::MAX_RECORDING_BYTES,
+            ]);
+            return ['status' => 'error', 'message' => 'Recording exceeds the maximum supported size.'];
         }
 
         $field = $mode === 'standing' ? 'standing_raw_xml' : 'seated_raw_xml';
@@ -110,54 +178,87 @@ class AobpIntegration extends AbstractExternalModule
             ];
         }
 
-        // Held, not filed. Filing it now creates an edoc that the next page
-        // submit destroys: REDCap saves every field on the page, the file input
-        // is empty because nobody chose a file, and clearing a file field sets
-        // delete_date on the edoc metadata. Re-attaching that doc id afterwards
-        // put the link back in the exports and gave a download of "Either this
-        // file does not exist OR you do not have permission to download it" —
-        // a link to a file REDCap considers deleted.
-        //
-        // So the bytes wait here, and redcap_save_record files them once the
-        // save that would have destroyed them is over. One edoc per recording,
-        // and never a tombstoned one.
-        $stash = $this->stashPath($project_id, $record, $event_id, $repeat_instance, $field);
-
-        if (file_put_contents($stash, $xml) === false) {
-            $this->log('AOBP recording could not be held', [
-                'record' => $record, 'instance' => $repeat_instance, 'field' => $field,
-            ]);
-            return ['status' => 'error', 'message' => 'The server could not hold the recording.'];
-        }
-
         $filename = $this->recordingFilename($record, $repeat_instance, $mode);
 
-        $this->log('AOBP recording held for saving', [
+        // storeFile() takes a path, so the bytes have to be on disk for the
+        // length of these two calls. Written and removed inside this one
+        // request, unlike the edoc it becomes.
+        $tmp = tempnam($this->tempDir(), 'aobp_');
+        if ($tmp === false || file_put_contents($tmp, $xml) === false) {
+            $this->log('AOBP recording failed', [
+                'record' => $record, 'instance' => $repeat_instance, 'field' => $field,
+                'message' => 'the server could not write a temporary file',
+            ]);
+            return ['status' => 'error', 'message' => 'The server could not write the recording.'];
+        }
+
+        try {
+            // Two calls, and both are required. storeFile() copies the bytes
+            // into the edoc store and returns a doc id -- or 0 -- which gets the
+            // file onto the server and nowhere near the record.
+            // addFileToField() is what puts it on the record. The instance is
+            // not optional: an instrument that repeats will otherwise file every
+            // measurement against instance 1.
+            //
+            // Note the method names: storeFile() and addFileToField(). There is
+            // no REDCap::saveFile(), however plausible it reads.
+            //
+            // Note the leading backslash too. REDCap is a global class and this
+            // file is in a namespace, so an unqualified REDCap:: names a class
+            // in THIS namespace -- which does not exist. PHP raises an Error,
+            // not an Exception, and the framework absorbs it: the page finishes
+            // normally with the fields saved and the recording never filed.
+            $docId = \REDCap::storeFile($tmp, $project_id, $filename);
+            if (!$docId) {
+                throw new Exception('REDCap::storeFile did not store the file.');
+            }
+
+            $linked = \REDCap::addFileToField(
+                $docId, $project_id, $record, $field, $event_id, $repeat_instance
+            );
+            if (!$linked) {
+                throw new Exception(
+                    'Stored as doc ' . $docId . ' but addFileToField did not attach it to "'
+                    . $field . '". Check that the field exists on the instrument and is a '
+                    . 'File Upload field.'
+                );
+            }
+        } catch (Throwable $e) {
+            $this->log('AOBP recording failed', [
+                'record'   => $record,
+                'instance' => $repeat_instance,
+                'field'    => $field,
+                'message'  => $e->getMessage(),
+            ]);
+            return ['status' => 'error', 'message' => $e->getMessage()];
+        } finally {
+            @unlink($tmp);
+        }
+
+        $this->log('AOBP recording stored', [
             'record'   => $record,
             'instance' => $repeat_instance,
             'field'    => $field,
+            'doc_id'   => $docId,
             'bytes'    => strlen($xml),
         ]);
 
         return [
-            'status'   => 'success',
+            'status'   => 'saved',
             'field'    => $field,
+            'doc_id'   => (string) $docId,
             'filename' => $filename,
+            'bytes'    => strlen($xml),
+            'sha256'   => hash('sha256', $xml),
         ];
     }
 
-    /** Where one recording waits between the measurement and the page save. */
-    private function stashPath($project_id, $record, $event_id, $repeat_instance, $field): string
+    /** Somewhere to put the bytes for the length of one request. */
+    private function tempDir(): string
     {
-        $dir = defined('APP_PATH_TEMP') && is_dir(APP_PATH_TEMP)
+        return defined('APP_PATH_TEMP') && is_dir(APP_PATH_TEMP)
             ? rtrim(APP_PATH_TEMP, '/' . DIRECTORY_SEPARATOR)
             : sys_get_temp_dir();
-
-        // Hashed, because a record id is whatever the project allows and this
-        // becomes a path. Deterministic, because the save has to find it again.
-        $key = md5(implode('|', [$project_id, $record, $event_id, $repeat_instance ?: 1, $field]));
-
-        return $dir . DIRECTORY_SEPARATOR . 'aobp_pending_' . $key . '.xml';
     }
 
     private function recordingFilename($record, $repeat_instance, $mode): string
@@ -246,90 +347,6 @@ class AobpIntegration extends AbstractExternalModule
         return $this->storedValue(
             $project_id, $record, $event_id, $repeat_instance, 'sys_standing_required'
         );
-    }
-
-    /**
-     * File the recordings the page left waiting, now the save is over.
-     *
-     * This runs after the submit that would have destroyed them. The file
-     * fields are on the instrument being filled in, REDCap saves every field on
-     * the page, and the file input is empty because nobody chose a file — so an
-     * edoc attached before the submit gets cleared, and clearing a file field
-     * sets delete_date on its metadata. The link can be put back; the file
-     * cannot, because REDCap will not serve a row it considers deleted. That is
-     * the "Either this file does not exist OR you do not have permission to
-     * download it" a working link gave.
-     *
-     * So nothing is filed until here: one edoc per recording, created after the
-     * only thing that would have killed it.
-     */
-    public function redcap_save_record(
-        $project_id,
-        $record,
-        $instrument,
-        $event_id,
-        $group_id,
-        $survey_hash,
-        $response_id,
-        $repeat_instance
-    ) {
-        if ($instrument !== $this->aobpInstrument()) {
-            return;
-        }
-
-        foreach (['seated' => 'seated_raw_xml', 'standing' => 'standing_raw_xml'] as $mode => $field) {
-            $this->fileHeldRecording(
-                $project_id, $record, $event_id, $repeat_instance, $mode, $field
-            );
-        }
-    }
-
-    private function fileHeldRecording(
-        $project_id, $record, $event_id, $repeat_instance, $mode, $field
-    ): void {
-        $stash = $this->stashPath($project_id, $record, $event_id, $repeat_instance, $field);
-        if (!is_file($stash)) {
-            return;                       // nothing waiting for this position
-        }
-
-        $filename = $this->recordingFilename($record, $repeat_instance, $mode);
-
-        try {
-            $docId = \REDCap::storeFile($stash, $project_id, $filename);
-            if (!$docId) {
-                throw new Exception('REDCap::storeFile did not store the file.');
-            }
-
-            $linked = \REDCap::addFileToField(
-                $docId, $project_id, $record, $field, $event_id, $repeat_instance
-            );
-            if (!$linked) {
-                throw new Exception(
-                    'Stored as doc ' . $docId . ' but addFileToField did not attach it.'
-                );
-            }
-
-            $this->log('AOBP recording stored', [
-                'record'   => $record,
-                'instance' => $repeat_instance,
-                'field'    => $field,
-                'doc_id'   => $docId,
-                'bytes'    => (string) filesize($stash),
-            ]);
-        } catch (Throwable $e) {
-            // Left in place deliberately: the next save of this instance tries
-            // again, and a recording is not thrown away because one attempt
-            // failed.
-            $this->log('AOBP recording failed', [
-                'record'   => $record,
-                'instance' => $repeat_instance,
-                'field'    => $field,
-                'message'  => $e->getMessage(),
-            ]);
-            return;
-        }
-
-        unlink($stash);
     }
 
     /** The version in this module's own config.json, or 'unknown'. */

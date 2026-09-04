@@ -454,27 +454,36 @@ is not a console warning: the operator is told, and a **Resend recording** butto
 appears, which retries without asking the participant to sit through another
 measurement.
 
-**Nothing is filed until the page has been saved.** The file fields are on the
-instrument being filled in. A page submit saves every field on that page, and
-the file input is empty — nobody chose a file, the module would have attached one
-behind it — so an edoc attached during the measurement is cleared by the submit.
-Clearing a file field sets `delete_date` on its metadata, and REDCap will not
-serve a row it considers deleted: the link comes back in the exports and the
-download says *"Either this file does not exist OR you do not have permission to
-download it"*.
+**The recording is filed at once, and then the form is told which document it
+is.** One thing makes that safe, and without it the recording is filed and then
+destroyed.
 
-So `save-xml` **holds** the XML in a temporary file, and `redcap_save_record`
-files it once the save that would have destroyed it is over. One edoc per
-recording, created after the only thing that would have killed it.
+A REDCap form posts the value its File Upload field was **rendered** with. The
+page rendered before the recording existed, so the form still says that field is
+empty — and clearing a file field sets `delete_date` on its metadata, which is
+how REDCap deletes an edoc. It will not serve a row it considers deleted: the
+link comes back in the exports and the download says *"Either this file does not
+exist OR you do not have permission to download it"*.
 
-A failed attempt leaves the held file where it is, so the next save of that
-instance tries again rather than throwing the recording away.
+So the ajax reply carries the **document id**, and the page writes it into the
+form's hidden input for that field. The submit then posts back the value that is
+already stored and changes nothing. This is exactly what REDCap's own upload
+dialog does with the id it gets, which is why uploading a file by hand and then
+saving does not destroy it.
 
-One thing still needs a REDCap instance to settle: whether `$record` is
-populated mid-survey. A file cannot attach to a record that does not exist, and
-on a survey the record is created when the first page is submitted. The module
-says so plainly rather than failing obscurely — *"This survey has no record yet,
-so the recording cannot be filed. Save the page, then press Resend recording."*
+Two consequences worth knowing:
+
+- **The save controls are disabled while anything is in flight** — the
+  measurement and the upload both — and stay disabled until the page has been
+  told the document id. A submit in that gap posts the empty value the page was
+  rendered with.
+- **A failed filing keeps the recording in the page**, and Resend recording
+  sends it again. There is no retry after the page is gone.
+
+A file cannot attach to a record that does not exist, and on a survey the record
+is created when the first page is submitted. The module says so plainly rather
+than failing obscurely — *"This survey has no record yet, so the recording cannot
+be filed. Save the page, then press Resend recording."*
 
 ---
 

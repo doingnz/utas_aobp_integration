@@ -122,7 +122,13 @@ export * as commands from './core/commands.js';
 // rather than discovering the constraint when a result file will not parse.
 export {
   validatePatientId,
+  // For a caller composing an ID out of parts it does not control, rather than
+  // one handed a value to pass along. Exported so consumers stop keeping their
+  // own copy of the rule, which is how three of them came to enforce one the
+  // SDK had already changed.
+  sanitisePatientId,
   PATIENT_ID_PATTERN,
+  PATIENT_ID_FORBIDDEN,
   PATIENT_ID_MAX_LENGTH,
   // The inverse of the device's timestamp format, for comparing its clock
   // with this computer's. See BpPlusDevice.syncTime().
@@ -130,7 +136,7 @@ export {
 } from './core/commands.js';
 
 /** SDK version, independent of the application's. */
-export const SDK_VERSION = '1.2.1';
+export const SDK_VERSION = '1.3.0';
 
 /** The Terminal API version this SDK is written against. */
 export const TERMINAL_API_VERSION = '2.4';

@@ -12,17 +12,17 @@
                      "  \u003ca checkout of https://github.com/Uscom/bpplus-redcap\u003e/tools/sync-sdk.ps1 -Consumer \u003cthis folder\u003e -Verify",
                      "The script lives in https://github.com/Uscom/bpplus-redcap, not in this repository."
                  ],
-    "sdkVersion":  "1.2.1",
+    "sdkVersion":  "1.3.0",
     "terminalApiVersion":  "2.4",
     "source":  {
                    "repository":  "https://github.com/Uscom/bpplus-js-sdk.git",
                    "path":  "sdk/",
-                   "ref":  "v1.2.1",
+                   "ref":  "v1.3.0",
                    "refKind":  "tag",
-                   "committed":  "2026-09-02T00:28:23+12:00"
+                   "committed":  "2026-09-04T12:11:04+12:00"
                },
     "vendored":  {
-                     "on":  "2026-09-02",
-                     "treeSha256":  "529b54a8550ecb380a67bf5810164151c2c336f73a34526cde42c0c3c8307a84"
+                     "on":  "2026-09-05",
+                     "treeSha256":  "813a15051551bb6f68ea4f227ad9925cb5eeb7e5e2501be822cf3893d909f46c"
                  }
 }

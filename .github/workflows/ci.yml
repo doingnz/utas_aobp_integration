@@ -1,0 +1,58 @@
+# Checks that run on every push and pull request.
+#
+# The point of each is that it catches something silent. A config that does not
+# parse, a class name that no longer matches the namespace, a vendored SDK
+# edited in place -- none of these fail loudly in REDCap. They fail on a
+# participant.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  module:
+    name: Module
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      - name: PHP lints
+        run: find . -name '*.php' -not -path './dist/*' -print0 | xargs -0 -n1 php -l
+
+      - name: What the save-xml endpoint refuses
+        # save-xml is reachable by an unauthenticated survey respondent, so the
+        # checks in front of it are worth running rather than reading.
+        run: php test/guards.php
+
+      - name: JavaScript parses
+        run: |
+          find . -name '*.js' -not -path './node_modules/*' -not -path './dist/*' \
+            -print0 | xargs -0 -n1 node --check
+
+      - name: The module starts, and the SDK is the one it was built against
+        run: |
+          npm install --no-save jsdom
+          node test/smoke.mjs
+
+      - name: The manifest says what REDCap needs, and the class matches it
+        # REDCap looks for a file named after the last segment of the namespace,
+        # holding a class of that name. A mismatch installs, appears in the
+        # module list, is enabled on a project, and then does nothing at all --
+        # with no error in any log, because REDCap never found a class to build.
+        #
+        # Written to a file rather than inline: the namespace separator is a
+        # backslash, and one surviving YAML, then a shell, then a node
+        # expression intact is not something to rely on.
+        run: node test/check-manifest.mjs

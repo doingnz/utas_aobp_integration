@@ -752,50 +752,64 @@ console.log('\na granted port is picked up without asking');
   }
 }
 
-// -- Nothing is filed until the page has been saved ------------------------
-// The file fields are on the instrument being filled in. A page submit saves
-// every field on that page, and the file input is empty — nobody chose a file —
-// so an edoc attached beforehand is cleared, and clearing a file field sets
-// delete_date on its metadata. Re-attaching the doc id put the link back in the
-// exports and gave "Either this file does not exist OR you do not have
-// permission to download it": a link to a file REDCap considers deleted.
+// -- The recording is filed at once, and the form is told which document ---
+// A REDCap form posts the value its File Upload field was RENDERED with, so a
+// page that rendered before the recording existed posts that emptiness back
+// over it -- and an emptied file field is how REDCap deletes an edoc. The reply
+// therefore carries the document id, and the page writes it into the form, so
+// the submit posts back what is already stored and changes nothing. That is
+// what REDCap's own upload dialog does with the id it gets.
 
-console.log('\nrecordings are filed after the save, not before');
+console.log('\nrecordings are filed at once, and the form is told');
 
 {
   const php = fs.readFileSync(new URL('../AobpIntegration.php', import.meta.url), 'utf8');
+  const js  = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
 
   const ajax = php.slice(php.indexOf('public function redcap_module_ajax'),
-                         php.indexOf('private function stashPath'));
-  check('the ajax call holds the recording and files nothing',
-    /stashPath\(/.test(ajax) &&
-    !/storeFile|addFileToField/.test(ajax));
+                         php.indexOf('private function tempDir'));
 
-  check('the save hook files it', /public function redcap_save_record\(/.test(php) &&
-    /function fileHeldRecording/.test(php));
+  check('the ajax call files the recording itself',
+    /REDCap::storeFile\(/.test(ajax) && /REDCap::addFileToField\(/.test(ajax));
 
-  const filing = php.slice(php.indexOf('private function fileHeldRecording'));
-  check('as a fresh edoc, not a re-attached one',
-    /REDCap::storeFile\(\$stash/.test(filing) && /REDCap::addFileToField\(/.test(filing));
+  check('and answers with the document id',
+    /'status'   => 'saved'/.test(ajax) && /'doc_id'/.test(ajax));
+
+  // Nothing waits anywhere any more: no stash, no second hook, and no window in
+  // which the cleanup cron could take a recording nobody had saved yet.
+  check('nothing is held on disk between requests',
+    !/stashPath/.test(php) && !/aobp_pending_/.test(php));
+  check('and there is no save hook left to file it later',
+    !/redcap_save_record/.test(php) && !/fileHeldRecording/.test(php));
+
+  // The temporary file exists only for the length of one request, because
+  // storeFile() takes a path rather than bytes.
+  check('the temporary file is removed in the same request',
+    /tempnam\(/.test(ajax) && /@unlink\(\$tmp\)/.test(ajax));
+
+  // This is the whole of the design in one line of JavaScript. Lose it and
+  // every recording is filed correctly and then deleted by the next submit,
+  // with nothing anywhere saying so.
+  check('the page adopts the document id into the form',
+    /adoptDocId\(/.test(js));
+
+  // As an input. The hidden input carries the field name and no id, and the
+  // download link beside it carries the same NAME.
+  check('and selects the hidden input as an input, not by name alone',
+    /input\[type="hidden"\]\[name="/.test(js));
+
+  check('the save controls are shut while anything is in flight',
+    /setSubmitEnabled\(/.test(js) && /submit-btn/.test(js));
+
+  // Every reading field on this instrument is @READONLY, so a read-only test
+  // that looked at the fields would refuse to measure on every page.
+  check('a locked page is judged by its save controls, not its fields',
+    /function readOnlyReason/.test(js) && /submit-btn/.test(js) &&
+    !/\.readOnly/.test(js));
 
   // Both positions, and only this instrument.
-  check('both recordings are looked for',
-    /'seated' => 'seated_raw_xml', 'standing' => 'standing_raw_xml'/.test(php));
-
-  // A save with nothing waiting must cost nothing.
-  check('a save with nothing waiting does nothing',
-    /if \(!is_file\(\$stash\)\) \{/.test(filing));
-
-  // A failed attempt must not throw the recording away: the next save retries.
-  const unlinkAt = filing.indexOf('unlink($stash)');
-  const catchAt  = filing.indexOf('catch (Throwable');
-  check('a failure leaves the recording for the next save',
-    catchAt > 0 && unlinkAt > catchAt);
-
-  // The path has to be found again by the save, and a record id is whatever the
-  // project allows.
-  check('the holding place is deterministic and not built from a record id',
-    /md5\(implode\('\|'/.test(php));
+  check('both positions have their own field',
+    /'standing_raw_xml' : 'seated_raw_xml'/.test(php));
 }
 
 // -- Is a standing measurement required? ----------------------------------
@@ -1103,13 +1117,12 @@ console.log('\nthe recording is filed, not truncated');
 
   // storeFile() registers the bytes and returns a doc id; addFileToField() is
   // what puts that doc on the record, with the instance. Neither alone is
-  // enough, and REDCap::saveFile — what this module called until now — is not a
-  // method REDCap has.
+  // enough, and there is no REDCap::saveFile at all, however plausible it reads.
   check('the file is stored and then attached, with the instance',
-    /REDCap::storeFile\(/.test(php) &&
-    /REDCap::addFileToField\(/.test(php) &&
+    /\REDCap::storeFile\(/.test(php) &&
+    /\REDCap::addFileToField\(/.test(php) &&
     /\$repeat_instance/.test(php.slice(php.indexOf('addFileToField'))) &&
-    !php.includes('REDCap::saveFile'));
+    !/\\REDCap::saveFile\(/.test(php));   // a CALL, not the comment warning about one
 
   // The stand-in is a classic script and the harness's own helpers live in a
   // <script type="module"> — module scope, invisible from it. Calling one threw

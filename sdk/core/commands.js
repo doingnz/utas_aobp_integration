@@ -31,19 +31,40 @@ function reject(message) {
 /**
  * The device stores whatever it is sent, verbatim, with no unquoting, escaping
  * or validation, and writes it straight into <PatientID> in the result file.
- * So the host owns every constraint:
+ * So the host owns every constraint, and this is where they are enforced.
+ *
+ * From the requirements specification: a patient ID may contain printable
+ * ASCII, 0x20 (space) to 0x7E (tilde), with four exceptions.
  *
  *   - no comma      it is read as the start of the next parameter
- *   - no < & >      written to the XML unescaped, making the result unparseable
- *   - no CR or LF   they frame the command
+ *   - no < & >      written to the result file unescaped, making it unparseable
  *
- * This SDK is stricter than the minimum, and matches the reference UI:
- * letters, digits and hyphen only. Quotes are NOT delimiters — a device that
- * receives them stores them as part of the value — so they are refused rather
- * than stripped, which would silently change what was asked for.
+ * Everything outside 0x20 to 0x7E is refused, which covers every control
+ * character -- carriage return and line feed among them, and those additionally
+ * terminate the command.
+ *
+ * Double quotes ARE permitted. They are not delimiters, and a device that
+ * receives them stores them as part of the value.
+ *
+ * Refused rather than repaired: silently altering an identifier is how two
+ * participants end up sharing one. sanitisePatientId() is here for a caller
+ * that is composing a value rather than being handed one.
  */
-export const PATIENT_ID_PATTERN = /^[A-Za-z0-9-]*$/;
+export const PATIENT_ID_PATTERN = /^[\x20-\x7E]*$/;
 export const PATIENT_ID_MAX_LENGTH = 64;
+
+/**
+ * The four printable characters that are still not allowed, and why.
+ *
+ * Kept as a map so a rejection can name the character and the reason rather
+ * than reporting that something unspecified was wrong with the input.
+ */
+export const PATIENT_ID_FORBIDDEN = Object.freeze({
+  ',': 'a comma is read as the start of the next parameter',
+  '<': 'a less-than is written to the result file unescaped, which would make it unparseable',
+  '&': 'an ampersand is written to the result file unescaped, which would make it unparseable',
+  '>': 'a greater-than is written to the result file unescaped, which would make it unparseable',
+});
 
 export function validatePatientId(patientId) {
   if (patientId === null || patientId === undefined || patientId === '') return '';
@@ -51,13 +72,50 @@ export function validatePatientId(patientId) {
   if (typeof patientId !== 'string') {
     throw reject('The patient ID must be text.');
   }
+
+  // Host policy, from the requirements specification. The firmware does not
+  // enforce it, so this is the only thing holding it -- which is also why it is
+  // checked on the way out and never on the way in: a file written by other
+  // software may carry a longer value and must still read back.
   if (patientId.length > PATIENT_ID_MAX_LENGTH) {
     throw reject(`The patient ID may be at most ${PATIENT_ID_MAX_LENGTH} characters.`);
   }
-  if (!PATIENT_ID_PATTERN.test(patientId)) {
-    throw reject('The patient ID may contain only letters, digits and hyphens.');
+
+  for (const [character, why] of Object.entries(PATIENT_ID_FORBIDDEN)) {
+    if (patientId.includes(character)) {
+      throw reject(`The patient ID may not contain "${character}": ${why}.`);
+    }
   }
+
+  if (!PATIENT_ID_PATTERN.test(patientId)) {
+    throw reject('The patient ID may contain only printable ASCII, 0x20 to 0x7E. ' +
+                 'Control characters and anything above 0x7E are refused.');
+  }
+
   return patientId;
+}
+
+/**
+ * A patient ID with everything the device cannot take replaced.
+ *
+ * For a caller that composes a value out of parts it does not control -- a
+ * record identifier from somewhere else, a template a study typed in -- rather
+ * than one handed a value to pass along. Those callers should not each own a
+ * copy of the rule; that is how three of them ended up enforcing a rule the
+ * SDK had already changed.
+ *
+ * Length is deliberately untouched. Truncating an identifier can make two
+ * participants share one, which is worse than refusing to send it, so the
+ * caller decides what to do about a value that is too long.
+ */
+export function sanitisePatientId(value, replacement = '-') {
+  if (value === null || value === undefined) return '';
+
+  // Written out rather than built from PATIENT_ID_FORBIDDEN. A character class
+  // assembled at run time needs its own escaping, which is one more thing to
+  // get quietly wrong; the self-test asserts that this and the map agree, so
+  // they cannot drift apart.
+  return String(value).replace(/[^\x20-\x7E]|[,<>&]/g, replacement);
 }
 
 // ── General operation ────────────────────────────────────────────────────────

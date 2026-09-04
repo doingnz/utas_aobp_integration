@@ -1,0 +1,89 @@
+# Build the installable ZIP and attach it to a GitHub release.
+#
+# This repository IS the module: config.json and AobpIntegration.php sit at its
+# root, unlike bpplus-redcap where several modules live under modules/. So the
+# ZIP is built from the root, with the things that belong to the repository
+# rather than to the module left out.
+#
+# The ZIP contains exactly one top-level folder, named
+# utas_aobp_integration_v<version>, which is what REDCap's "Upload module ZIP"
+# expects and what the directory must be called when installed by hand. REDCap
+# takes the version from that directory name, so a ZIP whose contents disagree
+# with its name installs and then reports a version its own config.json
+# contradicts -- which is why the version is checked against the tag below
+# before anything is built.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'utas_aobp_integration-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Read the version out of the tag, and check config.json agrees
+        id: tag
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag##*-v}"
+
+          declared=$(node -p "JSON.parse(require('fs').readFileSync('config.json','utf8')).version")
+          if [ "$declared" != "$version" ]; then
+            echo "Tag says $version; config.json says $declared."
+            echo "Update config.json and re-tag."
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "dir=utas_aobp_integration_v${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check the vendored SDK before shipping it
+        run: |
+          # An SDK edited in place is invisible until a measurement behaves
+          # differently on one site and not another, so the provenance file and
+          # the code beside it must agree before either leaves here.
+          npm install --no-save jsdom
+          node test/smoke.mjs
+
+      - name: Build the ZIP
+        run: |
+          dir="${{ steps.tag.outputs.dir }}"
+
+          mkdir -p dist/staging/"$dir"
+          # Everything except what belongs to the repository rather than to the
+          # module. The test harness stays: it is small, and an administrator who
+          # can open it has a way to tell a broken installation from a broken
+          # device without involving anyone.
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'dist' \
+                   --exclude 'node_modules' --exclude 'data_dictionary' \
+                   ./ dist/staging/"$dir"/
+
+          (cd dist/staging && zip -qr "../$dir.zip" "$dir")
+          unzip -l "dist/$dir.zip" | head -20
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AOBP Integration ${{ steps.tag.outputs.version }}
+          files: dist/${{ steps.tag.outputs.dir }}.zip
+          body: |
+            Install `${{ steps.tag.outputs.dir }}.zip` through
+            **Control Center → External Modules → Upload module ZIP**, or unzip
+            it into REDCap's `modules/` directory.
+
+            The folder inside is named `${{ steps.tag.outputs.dir }}`. REDCap
+            takes the version from that name, so do not rename it.
+
+            See `CHANGELOG.md` for what changed.
