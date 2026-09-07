@@ -6,6 +6,38 @@ the version from the installed directory name, and a ZIP whose contents
 contradict its own name is the one mistake that reaches a production server and
 stays there.
 
+## 1.2.0 -- 2026-09-07
+
+**The patient ID is now composed rather than being the record ID.** The device
+writes it verbatim into the xml result file saved to the SD card, which is what
+allows a card full of recordings to be reconciled back to REDCap records.
+
+Four choices, `REDCAP-[record]-[instance]` by default: the record ID on its own,
+a custom template, or nothing at all. `[record]`, `[instance]` and `[position]`
+are replaced, and `:5` pads with leading zeros.
+
+`[position]` is available and not in the default. A visit takes two recordings
+against one record and one instance, but an AOBP result already carries
+`bodyPosition` in its own XML, and the file says which it is.
+
+An ID is never truncated. Shortening an identifier is how two participants come
+to share one, which would undo the only thing the value is for -- an over-long
+value is not sent at all, and the status line says why. The character rule comes
+from the SDK rather than a copy kept here.
+
+### Settings
+
+Every setting now leads with a bold heading and follows it with an explanation,
+matching the Uscom module. The two instrument settings are dropdowns of the
+project's own instruments rather than free text: a misspelt instrument name is a
+setting that silently does nothing.
+
+`test/settings.html` renders `config.json` the way REDCap renders it. REDCap
+treats a setting's `name` as HTML, and a default written as
+`REDCAP-<record>-<instance>` reaches an administrator as `REDCAP--`. The same
+rules run in `test/smoke.mjs`, and `config.json` must be plain ASCII -- a curly
+apostrophe is invisible in a diff.
+
 ## 1.1.0 -- 2026-09-05
 
 The version number restarts here. Until now the patch number was the commit

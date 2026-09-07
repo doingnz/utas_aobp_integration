@@ -593,3 +593,21 @@ follows are Oliver's work; he first brought the BP+ into a REDCap survey. Both
 authors are listed in `config.json`, which is where REDCap reads them from for
 the module list.
 
+
+---
+
+## Seeing the settings page
+
+```
+python -m http.server 8080
+http://localhost:8080/test/settings.html
+```
+
+Renders `config.json` the way **REDCap** renders it. REDCap treats each setting's
+`name` as HTML, so a default written as `REDCAP-<record>-<instance>` reaches an
+administrator as `REDCAP--` — the browser reads the angle brackets as tags and
+drops them, along with what they appear to wrap. Nothing warns.
+
+The page shows what an administrator would see, what was written, and flags
+anything that will not survive. `test/smoke.mjs` checks the same rules, so a
+setting that would not render cannot pass CI either.

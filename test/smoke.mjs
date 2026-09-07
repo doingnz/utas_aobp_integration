@@ -1330,5 +1330,58 @@ console.log('\nhost-started-only');
   await device.disconnect();
 }
 
+
+// -- Will the settings reach an administrator as written? ----------------------
+// REDCap renders each setting's `name` from config.json as HTML. The failure is
+// silent: a default written as REDCAP-<record>-<instance> reaches the settings
+// page as "REDCAP--", because the browser reads the angle brackets as tags and
+// drops them along with what they appear to wrap.
+
+console.log('\nthe settings say what they mean');
+
+{
+  const config = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
+  const settings = [...(config['project-settings'] || []), ...(config['system-settings'] || [])];
+
+  // The tags REDCap's own setting names use. Anything else between angle
+  // brackets is markup a browser will swallow.
+  const KNOWN = /^<\/?(b|i|em|strong|code|br|u|small)\s*\/?>$/i;
+
+  const swallowed = [];
+  const unheaded = [];
+  const thin = [];
+  const emptyDropdowns = [];
+
+  for (const setting of settings) {
+    const name = String(setting.name || '');
+
+    for (const tag of name.match(/<[^>]*>/g) || []) {
+      if (!KNOWN.test(tag)) swallowed.push(setting.key + ': ' + tag);
+    }
+    if (!/^<b>.*<\/b>/.test(name)) unheaded.push(setting.key);
+
+    const after = name.split('<br>').slice(1).join(' ').replace(/<[^>]+>/g, '').trim();
+    if (!name.includes('<br>') || after.length < 25) thin.push(setting.key);
+
+    if (setting.type === 'dropdown' && !(setting.choices || []).length) {
+      emptyDropdowns.push(setting.key);
+    }
+  }
+
+  check('no setting name contains markup a browser will swallow',
+    swallowed.length === 0, swallowed.join('; '));
+  check('every setting leads with a bold heading',
+    unheaded.length === 0, unheaded.join(', '));
+  check('and follows it with an explanation',
+    thin.length === 0, thin.join(', '));
+  check('no dropdown is offered without choices',
+    emptyDropdowns.length === 0, emptyDropdowns.join(', '));
+
+  // The page that shows the same thing to a human, since wording is not
+  // something a regular expression can judge.
+  check('the settings preview page is present',
+    fs.existsSync(new URL('../test/settings.html', import.meta.url)));
+}
+
 console.log(failures ? `\n${failures} FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

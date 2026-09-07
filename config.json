@@ -2,7 +2,7 @@
   "name": "AOBP Integration",
   "namespace": "AobpIntegration",
   "description": "Records an AOBP blood pressure measurement from a Uscom BP+ device directly into a REDCap survey, using the BP+ JavaScript SDK.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "framework-version": 15,
   "auth-ajax-actions": [
     "save-xml"
@@ -30,34 +30,64 @@
     },
     {
       "key": "aobp-info-instrument",
-      "name": "<b>Instrument that uses the collapsible information panels</b><br>Blank uses <code>info</code>.",
+      "name": "<b>Instrument that uses the collapsible information panels</b><br>The unique instrument name, not its label. Blank uses <code>info</code>. This is the participant-facing information form, not the one that carries the AOBP controls.",
       "type": "form-list",
       "required": false
     },
     {
       "key": "aobp-clock-tolerance-minutes",
-      "name": "<b>Set the device clock from this computer when it is out by more than this many minutes</b><br>Blank uses 5. The measurement timestamp comes from the device, so a wrong clock mislabels data permanently.",
+      "name": "<b>Set the device clock from this computer when it is out by more than this many minutes</b><br>The device time stamps measurements. The device clock does not track daylight savings changes. Enabling the check ensures the device clock is aligned with the survey host clock. Blank defaults to 5 minutes.",
       "type": "text",
       "required": false
     },
     {
       "key": "aobp-show-recovered-warnings",
-      "name": "<b>Show warnings from attempts the device recovered from</b><br>The BP+ retries a determination it could not measure and reports the discarded attempt even when a later one succeeded &mdash; so a good reading arrives carrying a warning nobody can act on. Off by default: the alerts are recorded either way, and reporting them trains an operator to ignore the panel.",
+      "name": "<b>Show warnings from attempts the device recovered from</b><br>The BP+ may automatically retry a measurement and include an alert in the xml result. A retry may subsequently succeed. Turn ON if you want to see the warnings on measurements that succeeded after the retry. The alerts are recorded in the XML even when not displayed.",
       "type": "checkbox"
     },
     {
       "key": "aobp-save-xml-file",
-      "name": "<b>Store the raw measurement XML as a file on the record</b><br>Needs File Upload fields named <code>seated_raw_xml</code> and <code>standing_raw_xml</code>. A full result runs past 100&nbsp;kB, which no text field will hold, so this is where the XML belongs.",
+      "name": "<b>Store the raw measurement XML as a file on the record</b><br>A full xml result file can exceed the maximum size (65,000) permitted in a text field. Enable to save the full xml result in File Upload fields named <code>seated_raw_xml</code> and <code>standing_raw_xml</code>.",
       "type": "checkbox"
     },
     {
+      "key": "aobp-patient-id-mode",
+      "name": "<b>What to send the device as the patient ID</b><br>The device writes this verbatim into the xml result file which is saved to the SD card (when one is fitted). The patient ID may be useful to reconcile a card full of recordings back to REDCap records. Note a card is removable and nothing on it is access-controlled.",
+      "type": "dropdown",
+      "required": false,
+      "choices": [
+        {
+          "value": "",
+          "name": "REDCAP-[record]-[instance] (default)"
+        },
+        {
+          "value": "record",
+          "name": "The record ID on its own"
+        },
+        {
+          "value": "template",
+          "name": "Custom Patient ID template"
+        },
+        {
+          "value": "off",
+          "name": "Nothing -- the device stores no patient ID"
+        }
+      ]
+    },
+    {
+      "key": "aobp-patient-id-template",
+      "name": "<b>Custom Patient ID template</b><br>Used when 'Custom Patient ID template' is selected above. <code>[record]</code>, <code>[instance]</code> and <code>[position]</code> are replaced; everything else is sent as typed. Add <code>:5</code> to pad record or instance with leading zeros to the specified number of digits. e.g. <code>[record:5]</code> to pad result to 5 digits. <code>[position]</code> is the seated or standing if needed. AOBP results already record <code>bodyPosition</code> in the XML.",
+      "type": "text",
+      "required": false
+    },
+    {
       "key": "aobp-trace",
-      "name": "<b>Log every serial line to the browser console</b><br>Troubleshooting only.",
+      "name": "<b>Log every serial line to the browser console</b><br>Troubleshooting only. Every command sent to the BP+ and every line it answers with, which is what a support report needs when a device behaves differently on one site and not another. Off for normal use: it says nothing an operator can act on.",
       "type": "checkbox"
     },
     {
       "key": "aobp-simulator",
-      "name": "<b>TESTING ONLY &mdash; simulated BP+</b><br>Takes measurements from a built-in simulator instead of a real device, so the survey, the file storage and the record can be tested with no BP+ and no cable. <b>Readings are fabricated.</b> The page says so in a red banner, and every record is written with a device id beginning <code>SIMULATED-</code>. Never enable this on a project collecting real data.",
+      "name": "<b>TESTING ONLY &mdash; simulated BP+</b><br>When enabled, the survey, the file storage and the record can be tested with no BP+ and no cable using measurements from a built-in simulator instead of a real device. <b>Readings are fabricated.</b> The page displays a warning in a red banner, and every record is written with a device id beginning <code>SIMULATED-</code>. Never enable this on a project collecting real data.",
       "type": "checkbox"
     }
   ]

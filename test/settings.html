@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Module settings - preview</title>
+
+<!--
+  The module configuration page, without REDCap.
+
+  REDCap renders each setting's `name` from config.json as HTML. That is easy to
+  forget, and the failure is silent: a name containing REDCAP-<record>-<instance>
+  renders as "REDCAP--" because the browser reads the angle brackets as tags and
+  drops them. Nothing warns, and the setting reaches an administrator with its
+  own default missing from the description.
+
+  So this page renders the same JSON the same way, beside a plain-text view of
+  what was written, and flags anything that will not survive. It cannot promise
+  REDCap's exact styling -- it is not REDCap -- but wording, emphasis, dropdown
+  choices and swallowed markup are all visible here without installing anything.
+
+      python -m http.server 8080
+      http://localhost:8080/test/settings.html
+
+  ?config=<url> previews another module's config.json; the default is the one
+  beside this file.
+-->
+
+<style>
+  :root { --ink:#1c2430; --muted:#5d6b7a; --line:#d8dee6; --ground:#f6f8fa;
+          --panel:#fff; --bad:#b71c1c; --bad-bg:#fdecea; --ok:#2d6a4f; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+         font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         overflow-wrap:anywhere; }
+  .wrap { max-width:900px; margin:0 auto; padding:26px 20px 80px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 20px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.07em;
+       color:var(--muted); margin:26px 0 10px; }
+
+  .setting { background:var(--panel); border:1px solid var(--line);
+             border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .key { font:12.5px ui-monospace,Consolas,monospace; color:var(--muted); }
+  .type { float:right; font:12px ui-monospace,Consolas,monospace; color:var(--muted); }
+  .rendered { margin:6px 0 10px; }
+  .rendered code { background:#eef2f6; padding:1px 4px; border-radius:4px;
+                   font:12.5px ui-monospace,Consolas,monospace; }
+  input[type=text], select { width:100%; max-width:420px; padding:6px 9px;
+    border:1px solid var(--line); border-radius:7px; font:inherit; background:#fff; }
+  .note { color:var(--muted); font-size:13px; }
+
+  .warn { background:var(--bad-bg); border:1px solid var(--bad); color:var(--bad);
+          border-radius:8px; padding:10px 12px; margin:8px 0 0; font-size:13.5px; }
+  .warn b { font-family:ui-monospace,Consolas,monospace; }
+  .summary { border-radius:10px; padding:12px 16px; margin-bottom:18px;
+             font-weight:600; }
+  .summary.ok  { background:#d8f3dc; border:1px solid #b7e4c7; color:var(--ok); }
+  .summary.bad { background:var(--bad-bg); border:1px solid var(--bad); color:var(--bad); }
+  details { margin-top:8px; }
+  summary { cursor:pointer; color:var(--muted); font-size:13px; }
+  pre { margin:6px 0 0; background:#0f1720; color:#d5e2ee; padding:10px;
+        border-radius:8px; font:12px/1.5 ui-monospace,Consolas,monospace;
+        white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Module settings — preview</h1>
+  <p class="sub">The same <code>config.json</code> REDCap reads, rendered the way REDCap
+     renders it. Not REDCap's styling; REDCap's <em>interpretation</em>.</p>
+  <div id="summary" class="summary">Loading…</div>
+  <div id="out"></div>
+</div>
+
+<script type="module">
+const params = new URLSearchParams(location.search);
+const url = params.get('config') || '../config.json';
+
+// no-store for the reason the harness does it: a cached copy makes this page
+// describe the settings as they were while claiming to describe them as they are.
+const config = await fetch(url, { cache: 'no-store' }).then(r => {
+  if (!r.ok) throw new Error(url + ' — HTTP ' + r.status);
+  return r.json();
+});
+
+// The tags REDCap's own setting names use. Anything else between angle brackets
+// is markup the browser will swallow, which is how a default written as
+// REDCAP-<record>-<instance> reaches an administrator as REDCAP--.
+const KNOWN = /^<\/?(b|i|em|strong|code|br|u|small)\s*\/?>$/i;
+
+function problems(setting) {
+  const found = [];
+  const name = String(setting.name || '');
+
+  for (const tag of name.match(/<[^>]*>/g) || []) {
+    if (!KNOWN.test(tag)) {
+      found.push(`<b>${escapeHtml(tag)}</b> is not one of the tags REDCap's settings use, so the browser will drop it and everything it appears to wrap. Write it as <b>&amp;lt;…&amp;gt;</b>, or use square brackets.`);
+    }
+  }
+  if (!/^<b>.*<\/b>/.test(name)) {
+    found.push('The name does not start with a bold heading. Every other setting does, and an administrator scanning the page reads the headings first.');
+  }
+  if (!name.includes('<br>')) {
+    found.push('No <b>&lt;br&gt;</b> after the heading, so the explanation runs into it.');
+  } else {
+    const after = name.split('<br>').slice(1).join(' ').replace(/<[^>]+>/g, '').trim();
+    if (after.length < 25) found.push('The explanation is very short. Say what it does and what blank means.');
+  }
+  if (setting.type === 'dropdown' && !(setting.choices || []).length) {
+    found.push('A dropdown with no choices.');
+  }
+  return found;
+}
+
+const escapeHtml = s => String(s).replace(/[&<>"]/g, c =>
+  ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+
+function control(setting) {
+  switch (setting.type) {
+    case 'checkbox':
+      return '<label><input type="checkbox"> <span class="note">unticked — how every new project starts</span></label>';
+    case 'dropdown':
+      return '<select>' + (setting.choices || []).map(c =>
+        `<option value="${escapeHtml(c.value)}">${escapeHtml(c.name)}</option>`).join('') + '</select>';
+    case 'form-list':
+      return '<select><option>— the project\'s instruments —</option></select>';
+    case 'text':
+      return '<input type="text" placeholder="">';
+    default:
+      return `<span class="note">(${escapeHtml(setting.type)})</span>`;
+  }
+}
+
+let total = 0;
+const out = document.getElementById('out');
+
+for (const group of ['system-settings', 'project-settings']) {
+  const list = config[group] || [];
+  if (!list.length) continue;
+
+  out.insertAdjacentHTML('beforeend', `<h2>${group} — ${list.length}</h2>`);
+
+  for (const setting of list) {
+    const found = problems(setting);
+    total += found.length;
+
+    out.insertAdjacentHTML('beforeend', `
+      <div class="setting">
+        <span class="type">${escapeHtml(setting.type)}${setting.required ? ' · required' : ''}</span>
+        <div class="key">${escapeHtml(setting.key)}</div>
+        <div class="rendered">${setting.name || ''}</div>
+        ${control(setting)}
+        ${found.map(p => `<div class="warn">${p}</div>`).join('')}
+        <details><summary>as written in config.json</summary><pre>${escapeHtml(setting.name || '')}</pre></details>
+      </div>`);
+  }
+}
+
+const summary = document.getElementById('summary');
+summary.className = 'summary ' + (total ? 'bad' : 'ok');
+summary.textContent = total
+  ? `${total} thing${total === 1 ? '' : 's'} in these settings will not reach an administrator as written.`
+  : `${config.name} ${config.version} — every setting renders as written.`;
+</script>
+</body>
+</html>

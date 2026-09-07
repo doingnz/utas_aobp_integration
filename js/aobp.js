@@ -537,31 +537,64 @@
      * hold characters it will refuse, so anything else becomes a hyphen rather
      * than costing an F 14 at the start of a measurement.
      */
-    function patientId() {
+    function patientId(position) {
       var cfg = window.AOBP_CONFIG || {};
-      var raw = String(cfg.record === undefined || cfg.record === null ? '' : cfg.record);
+      var mode = cfg.patientIdMode || 'default';
+      if (mode === 'off') return { value: '', problem: '' };
+
+      var template = mode === 'record'   ? '[record]'
+                   : mode === 'template' ? String(cfg.patientIdTemplate || '')
+                   : 'REDCAP-[record]-[instance]';
+
+      if (template === '') {
+        return { value: '', problem: 'the patient ID template is empty' };
+      }
+
+      var parts = {
+        record:   String(cfg.record === undefined || cfg.record === null ? '' : cfg.record),
+        instance: String(cfg.repeat_instance || 1),
+
+        // Available, but not in the default. A visit takes two recordings
+        // against one record and one instance, so the identifier alone cannot
+        // tell them apart -- but it does not have to: an AOBP result carries
+        // bodyPosition="seated" in its own XML, so the file says which it is.
+        // A study that wants the position in the identifier as well can put
+        // [position] in the template.
+        position: String(position || ''),
+      };
+
+      // Each placeholder takes an optional :N to pad with leading zeros, so a
+      // column of these sorts. Padded to at least N and never cut down to it:
+      // shortening an identifier is how two participants come to share one.
+      var composed = template.replace(/\[(record|instance|position)(?::(\d+))?\]/g,
+        function (whole, name, width) {
+          var value = parts[name];
+          var pad = width ? Number(width) : 0;
+          while (value.length < pad) value = '0' + value;
+          return value;
+        });
 
       // Sanitised by the SDK, never by a copy of the rule kept here. Three
       // consumers each had their own, and all three went on enforcing
       // letters-digits-hyphen after the SDK had relaxed to what the
       // specification actually allows.
       if (!sdk || typeof sdk.sanitisePatientId !== 'function') {
-        console.warn('[AOBP] this SDK cannot check a patient ID, so none was sent');
-        return '';
+        return { value: '', problem: 'this SDK cannot check a patient ID' };
       }
 
-      var safe = sdk.sanitisePatientId(raw);
+      var safe = sdk.sanitisePatientId(composed);
       var limit = sdk.PATIENT_ID_MAX_LENGTH || 64;
 
-      // Never truncated. Shortening an identifier is how two participants come
-      // to share one, which would undo the only thing the value is for.
+      // Never truncated, for the same reason.
       if (safe.length > limit) {
-        console.warn('[AOBP] the patient ID came to ' + safe.length +
-                     ' characters and the device takes ' + limit + ', so none was sent');
-        return '';
+        return {
+          value: '',
+          problem: 'the patient ID came to ' + safe.length + ' characters, and the ' +
+                   'device takes ' + limit,
+        };
       }
 
-      return safe;
+      return { value: safe, problem: '' };
     }
 
     /**
@@ -693,7 +726,18 @@
     async function measure(mode) {
       await syncClock();
 
-      var options = { patientId: patientId() };
+      // Worked out before the measurement so a problem with it is reported
+      // rather than lost. A patient ID that cannot be composed is not a reason
+      // to refuse a participant who is already sitting there: the measurement
+      // goes ahead without one.
+      var who = patientId(mode);
+      if (who.problem) {
+        console.warn('[AOBP] no patient ID was sent: ' + who.problem);
+        setStatus('normal', 'No patient ID was sent to the device: ' + who.problem +
+                  '. The measurement is unaffected.', mode);
+      }
+
+      var options = { patientId: who.value };
 
       if (deviceIsAobp()) {
         // The body position is the 5th parameter of `s`, and the device

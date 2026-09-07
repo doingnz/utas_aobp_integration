@@ -283,6 +283,28 @@ class AobpIntegration extends AbstractExternalModule
         return (float) $configured;
     }
 
+    /**
+     * Which of the four things to send the device as a patient ID.
+     *
+     * The device keeps this in its own result file and on its SD card, so it is
+     * what reconciles a card full of recordings back to records when REDCap has
+     * no copy of the reading -- a browser that died, a survey abandoned before
+     * its submit.
+     */
+    private function patientIdMode(): string
+    {
+        $configured = trim((string) $this->getProjectSetting('aobp-patient-id-mode'));
+        $known = ['record', 'template', 'off'];
+
+        return in_array($configured, $known, true) ? $configured : 'default';
+    }
+
+    /** The template, when the mode says to use one. */
+    private function patientIdTemplate(): string
+    {
+        return trim((string) $this->getProjectSetting('aobp-patient-id-template'));
+    }
+
     private function aobpInstrument(): string
     {
         $configured = trim((string) $this->getProjectSetting('aobp-instrument'));
@@ -374,6 +396,12 @@ class AobpIntegration extends AbstractExternalModule
             'clockToleranceMinutes' => $this->clockToleranceMinutes(),
             'trace'           => (bool) $this->getProjectSetting('aobp-trace'),
             'simulator'       => (bool) $this->getProjectSetting('aobp-simulator'),
+
+            // Composed in the browser rather than here, because the position is
+            // known only at the moment a measurement is taken and a value fixed
+            // at render time would label a standing recording as seated.
+            'patientIdMode'     => $this->patientIdMode(),
+            'patientIdTemplate' => $this->patientIdTemplate(),
 
             // So a console says which build answered. REDCap takes the version
             // from the directory name and shows it in the module list, but a
