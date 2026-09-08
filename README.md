@@ -98,26 +98,20 @@ BP+** differs — a port list on desktop, a USB device list on a tablet.
 
 ## Installing
 
-```
-node tools/package.mjs
-```
-
-builds `dist/utas_aobp_integration_v1.0.<n>/` and a zip of it.
-
-1. Copy that folder into REDCap's `modules/` directory, keeping its name —
-   REDCap takes the version from the directory name.
+1. Copy this folder into REDCap's `modules/` directory as
+   `utas_aobp_integration_v<version>` — REDCap takes the version from the
+   directory name. Ship `AobpIntegration.php`, `config.json`, `README.md`,
+   `js/` and `sdk/`; leave `test/` and `data_dictionary/` behind.
 2. Enable it on the project.
 3. Set the instrument names below if they are not `aobp_visit` and `info`.
 
-**The version is the commit count**, so it changes with every commit and cannot
-be forgotten: `1.0.59` is the 59th commit, and `git rev-list --count` finds
-exactly the code that was packaged. It is stamped into the copy under `dist/`
-rather than into this repository's `config.json` — committing the stamp would
-raise the count that produced it, so the file would always name the version
-before itself. Packaging refuses to run on a dirty tree for the same reason.
+The page logs its version as the first console line — `[AOBP] module 1.0.0` —
+because REDCap shows the version in its module list and a survey page shows
+neither.
 
-The page logs it as its first console line — `[AOBP] module 1.0.59` — because
-REDCap shows the version in its module list and a survey page shows neither.
+There is no packaging script here any more: `tools/package.mjs` went with the
+hold-until-save design it was built alongside. If versioned builds are wanted
+again, the count-from-git approach it used is in the history at `83dc8fd`.
 
 ---
 
