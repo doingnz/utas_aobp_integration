@@ -850,6 +850,40 @@ console.log('\nwhether standing is required has two sources');
     /return \(\$value === null \|\| \$value === ''\) \? null :/.test(reader));
 }
 
+// -- The BP+ restarting, and the page noticing ----------------------------
+// Changing the measurement mode on the device reboots it. The USB device is the
+// Prolific adapter, not the BP+, so nothing re-enumerates: Chrome fires no
+// disconnect, the port stays open, and the page keeps believing a feature list
+// read before the reboot. An operator told "not in AOBP mode" went and changed
+// it, came back to Start still disabled and no Connect button, and had nothing
+// to press.
+
+console.log('\na restart is noticed, because only the device can say so');
+
+{
+  const app = fs.readFileSync(new URL('../js/aobp.js', import.meta.url), 'utf8');
+
+  // M 00 is the device announcing itself from the start, which is the one thing
+  // only a restart produces.
+  check('the page listens for the device announcing a restart',
+    /mode\.code !== sdk\.DeviceMode\.initial/.test(app) &&
+    /function rereadAfterRestart/.test(app));
+  check('and reads the feature list again rather than trusting the old one',
+    /await device\.readFeatures\(\)/.test(app.slice(app.indexOf('rereadAfterRestart'))));
+
+  // showDeviceInfo() was called and never defined, so a ping read both answers
+  // and then threw a ReferenceError on its way to the status line.
+  check('every function the page calls exists',
+    /function showDeviceInfo/.test(app));
+
+  // The catch reported a cable fault for any failure at all, including that
+  // one, while the trace showed the BP+ answering.
+  const ping = app.slice(app.indexOf("'[AOBP] ping failed'") - 900);
+  check('a failed check is reported as what it was',
+    /setStatus\('error', describe\(error\)\)/.test(ping) &&
+    !/No answer from the BP\+\. Check the cable/.test(app));
+}
+
 // -- A simulated device, and how a record says so -------------------------
 // So the survey, the upload and the record can be tested where there is no BP+
 // and no cable, which is most of what needs testing. Everything downstream runs

@@ -373,6 +373,23 @@
         console.warn('[AOBP] the device went away (' + state + ')');
       });
 
+      // The BP+ restarting is invisible unless the device says so.
+      //
+      // Changing the measurement mode on the device reboots it. The USB device
+      // is the Prolific adapter, not the BP+, so nothing re-enumerates: Chrome
+      // fires no disconnect, the port stays open, and the page carries on
+      // believing the feature list it read before the reboot. An operator who
+      // was told "not in AOBP mode", went and changed it, came back to a page
+      // with Start still disabled, no Connect button, and nothing to press.
+      //
+      // M 00 is the device announcing itself from the start, which is the one
+      // thing only a restart produces.
+      device.on('mode', function (mode) {
+        if (!sdk || mode.code !== sdk.DeviceMode.initial) return;
+        if (busy) return;                  // a measurement will report its own end
+        rereadAfterRestart();
+      });
+
       device.on('log', function (entry) {
         if (window.AOBP_CONFIG && window.AOBP_CONFIG.trace) {
           console.log('[AOBP] ' + (entry.dir === 'tx' ? '>' : '<'), entry.text);
@@ -1846,7 +1863,12 @@
             setStatus('success', 'BP+ device found and ready.');
           }
         } catch (error) {
-          setStatus('error', 'No answer from the BP+. Check the cable, then try again.');
+          // Not every failure here is the device's. A fault in this page threw
+          // where the reply should have been read, and the operator was sent to
+          // check a cable that was working — while the trace showed the BP+
+          // answering both commands. describe() knows a connection failure from
+          // anything else; anything else is said as it is.
+          setStatus('error', describe(error));
           console.error('[AOBP] ping failed', error);
         } finally {
           busy = false;
@@ -1855,6 +1877,71 @@
       });
     }
 
+
+    /**
+     * Read the device again, because it is not the device we read before.
+     *
+     * Everything the page decides from the feature list — whether it can
+     * measure at all, which buttons are live — was answered by a device that
+     * has since restarted, quite possibly into a different mode. Cheap: two
+     * commands, and only when the device says it has restarted.
+     */
+    async function rereadAfterRestart() {
+      console.log('[AOBP] the BP+ restarted; reading it again');
+
+      try {
+        features = await device.readFeatures();
+        apiVersion = await device.readApiVersion().catch(function () { return null; });
+      } catch (error) {
+        console.warn('[AOBP] could not read the BP+ after its restart:', error.message);
+        return;
+      }
+
+      showDeviceInfo();
+      updateButtons();
+
+      setStatus(deviceIsAobp() ? 'success' : 'error',
+        deviceIsAobp()
+          ? 'BP+ restarted and is in AOBP mode. Ready to measure.'
+          : 'BP+ restarted, but it is not in AOBP mode. ' +
+            (canSetAobpMode() && ui.setAobp
+              ? 'Press Set AOBP mode to switch it.'
+              : 'It must be switched to AOBP mode before it can be used.'),
+        'all');
+    }
+
+    /**
+     * The versions and mode, for a reader who can act on them.
+     *
+     * Absent from a participant-facing instrument on purpose: which kind of
+     * instrument this is gets decided by whether it provides #device-info,
+     * rather than by a setting nobody would find.
+     *
+     * This module called it and never defined it. A ping therefore read the
+     * versions, read the feature list, and then threw a ReferenceError on its
+     * way to the status line — which the catch below reported as "No answer
+     * from the BP+. Check the cable", with the answers sitting in the trace.
+     */
+    function showDeviceInfo() {
+      if (!ui.info) return;
+      if (!features) { ui.info.innerText = ''; return; }
+
+      var newline = String.fromCharCode(10);
+      ui.info.style.background   = '#f1f5f9';
+      ui.info.style.border       = '1px solid #d8dee6';
+      ui.info.style.borderRadius = '8px';
+      ui.info.style.padding      = '10px 14px';
+      ui.info.style.marginTop    = '10px';
+      ui.info.style.fontFamily   = 'ui-monospace, Consolas, monospace';
+      ui.info.style.fontSize     = '13px';
+      ui.info.innerText = [
+        'Device ' + features.deviceId,
+        'Software ' + features.softwareVersion + ' · firmware ' + features.firmwareVersion,
+        'Feature list ' + features.version + ' · Terminal API ' + (apiVersion || 'unknown'),
+        'Mode ' + features.measureModeInfo.label,
+        'SDK ' + sdk.SDK_VERSION + ' (written against Terminal API ' + sdk.TERMINAL_API_VERSION + ')',
+      ].join(newline);
+    }
 
     /** Whether this position already has a reading stored. */
     function hasReading(mode) {
