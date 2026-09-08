@@ -2,7 +2,7 @@
   "name": "AOBP Integration",
   "namespace": "AobpIntegration",
   "description": "Records an AOBP blood pressure measurement from a Uscom BP+ device directly into a REDCap survey, using the BP+ JavaScript SDK.",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "framework-version": 15,
   "auth-ajax-actions": [
     "save-xml"

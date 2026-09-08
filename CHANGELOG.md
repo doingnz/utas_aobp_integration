@@ -6,6 +6,41 @@ the version from the installed directory name, and a ZIP whose contents
 contradict its own name is the one mistake that reaches a production server and
 stays there.
 
+## 1.2.1 -- 2026-09-08
+
+Two faults in the same dead end, both met by changing the measurement mode on
+the device rather than with **Set AOBP mode**.
+
+### The page now notices the BP+ restarting
+
+Changing the mode reboots it. The USB device is the Prolific adapter rather than
+the BP+, so nothing re-enumerates: Chrome fires no disconnect, the port stays
+open, and the page went on believing a feature list read before the reboot. An
+operator told the device was not in AOBP mode, who went and changed it, came
+back to Start still disabled, no Connect button, and nothing to press.
+
+`M 00` is the device announcing itself from the start, which only a restart
+produces. The page listens for it, reads the device again, and says what it
+found -- so a mode changed on the device takes effect without a reload.
+
+### Ping no longer blames the cable for a fault in this page
+
+`showDeviceInfo()` was called and never defined here. A ping therefore read the
+Terminal API version, read the feature list, and then threw on its way to the
+status line -- which was reported as *"No answer from the BP+. Check the cable,
+then try again."* with both answers sitting in the trace.
+
+It is defined now, and fills `#device-info` where an instrument provides one.
+A failed check reports what actually happened rather than assuming the device is
+at fault.
+
+### Also
+
+- The install instructions no longer open with `node tools/package.mjs`, which
+  was removed in 1.2.0 along with the design it was built for.
+
+Nothing in `sdk/` changed: still v1.3.0, verified against its manifest.
+
 ## 1.2.0 -- 2026-09-07
 
 **The patient ID is now composed rather than being the record ID.** The device
