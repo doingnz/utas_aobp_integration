@@ -375,6 +375,19 @@ it is called from. A survey respondent is not logged in, so `save-xml` appears i
 both lists — `no-auth-ajax-actions` for the survey, `auth-ajax-actions` for a
 coordinator opening the same instrument as a data-entry form.
 
+**The logging.** That unauthenticated context reaches the logging too. From
+framework version 11 the framework refuses `log()` there unless `config.json`
+sets `enable-no-auth-logging`, and this module renders on the survey page and
+nowhere else — so without it nothing the endpoint records is kept, and an empty
+log is not evidence that nothing went wrong. Entries appear under **External
+Modules → View Logs** in the project's left menu, which is a different thing
+from REDCap's own **Logging** page.
+
+Logging is also the least important thing the endpoint does, and every call goes
+through `logSafely()` so it cannot become the reply. The call on the success
+path runs before the doc id goes back to the page, and a page that never
+receives the doc id posts the form's rendered emptiness over the file.
+
 **The saving, which is two steps.**
 
 ```php

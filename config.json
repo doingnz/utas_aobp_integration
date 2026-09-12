@@ -2,7 +2,7 @@
   "name": "AOBP Integration",
   "namespace": "AobpIntegration",
   "description": "Records an AOBP blood pressure measurement from a Uscom BP+ device directly into a REDCap survey, using the BP+ JavaScript SDK.",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "framework-version": 15,
   "auth-ajax-actions": [
     "save-xml"
@@ -10,6 +10,19 @@
   "no-auth-ajax-actions": [
     "save-xml"
   ],
+  "$comment-logging": [
+    "A capability, not a policy. From framework version 11 the framework",
+    "refuses log() from an unauthenticated context unless this is set. This",
+    "module renders on the survey page and nowhere else, so that is every call",
+    "it makes -- unset, it has no account of itself at all, and an empty log is",
+    "not evidence that nothing went wrong.",
+    "It cannot be changed from the Control Center or a project: the framework",
+    "reads it from the installed version's config.json.",
+    "Nothing a caller wrote reaches the log. Every value is either a literal",
+    "in the module or a context parameter the framework supplies, which the",
+    "hook documentation says can be trusted when set."
+  ],
+  "enable-no-auth-logging": true,
   "authors": [
     {
       "name": "Richard Scott",

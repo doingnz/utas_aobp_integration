@@ -25,6 +25,13 @@ abstract class AbstractExternalModule
     public array $settings = [];
     public array $logged = [];
 
+    /**
+     * Set when a test wants logging to refuse the way the framework does from
+     * an unauthenticated context with enable-no-auth-logging unset. This module
+     * only ever runs on a survey, so that is every call it makes.
+     */
+    public bool $logThrows = false;
+
     public function getProjectSetting($key)
     {
         return $this->settings[$key] ?? null;
@@ -32,6 +39,9 @@ abstract class AbstractExternalModule
 
     public function log($message, $params = [])
     {
+        if ($this->logThrows) {
+            throw new \Exception('logging is not allowed in this context');
+        }
         $this->logged[] = ['message' => $message, 'params' => $params];
         return 1;
     }
@@ -106,10 +116,11 @@ function check(string $what, bool $ok, string $detail = ''): void
 
 /** One call to the endpoint, with the module configured as given. */
 function call($xml, array $settings = [], string $instrument = 'aobp_visit',
-              $record = 'REC-1', $mode = 'seated'): array
+              $record = 'REC-1', $mode = 'seated', bool $logThrows = false): array
 {
     $module = new AobpIntegration();
     $module->settings = $settings + ['aobp-save-xml-file' => true];
+    $module->logThrows = $logThrows;
 
     $reply = $module->redcap_module_ajax(
         'save-xml', ['mode' => $mode, 'xml' => $xml], 1, $record, $instrument,
@@ -251,6 +262,34 @@ $out = call(result(1000));
 check('a file that does not attach is an error', ($out['reply']['status'] ?? '') === 'error');
 check('and the message names the field to check',
     strpos($out['reply']['message'] ?? '', 'raw_xml') !== false);
+REDCap::$attachFails = false;
+
+// -- Logging ---------------------------------------------------------------
+// The framework refuses log() from an unauthenticated context unless
+// config.json sets enable-no-auth-logging, and this module runs on the survey
+// page and nowhere else -- so that is every call it makes. Logging is the least
+// important thing the endpoint does, so a refusal must cost a log line and
+// nothing else. The reply matters most on the success path: the page needs the
+// doc id, and a form that never receives one clears the field on the next
+// submit.
+
+heading('a log that cannot be written costs nothing else');
+
+$out = call(result(5000), [], 'aobp_visit', 'REC-1', 'seated', true);
+check('a stored recording is still reported as stored',
+    ($out['reply']['status'] ?? '') === 'saved', json_encode($out['reply']));
+check('and the doc id the form needs still comes back', !empty($out['reply']['doc_id']));
+
+$out = call(result(1000), [], 'some_other_form', 'REC-1', 'seated', true);
+check('a refusal is still a refusal', ($out['reply']['status'] ?? '') === 'error');
+
+// The log call on this path sits INSIDE the catch block, holding the only
+// description of what went wrong.
+REDCap::$attachFails = true;
+$out = call(result(1000), [], 'aobp_visit', 'REC-1', 'seated', true);
+check('a failure still names the field to check',
+    strpos($out['reply']['message'] ?? '', 'raw_xml') !== false,
+    json_encode($out['reply']));
 REDCap::$attachFails = false;
 
 check('nothing was left in the temporary directory',

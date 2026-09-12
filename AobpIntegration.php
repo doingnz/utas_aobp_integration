@@ -117,7 +117,7 @@ class AobpIntegration extends AbstractExternalModule
         // framework ever supplies this differently the symptom is that filing
         // stops entirely, and the log is what says why in one look.
         if ($instrument !== $this->aobpInstrument()) {
-            $this->log('AOBP recording refused', [
+            $this->logSafely('AOBP recording refused', [
                 'reason'     => 'not the AOBP instrument',
                 'instrument' => (string) $instrument,
                 'record'     => (string) $record,
@@ -155,7 +155,7 @@ class AobpIntegration extends AbstractExternalModule
         // generous one, while a tight fit rejects a measurement already taken on
         // a participant.
         if (strlen($xml) > self::MAX_RECORDING_BYTES) {
-            $this->log('AOBP recording refused', [
+            $this->logSafely('AOBP recording refused', [
                 'reason' => 'over the size limit',
                 'record' => (string) $record,
                 'bytes'  => strlen($xml),
@@ -185,7 +185,7 @@ class AobpIntegration extends AbstractExternalModule
         // request, unlike the edoc it becomes.
         $tmp = tempnam($this->tempDir(), 'aobp_');
         if ($tmp === false || file_put_contents($tmp, $xml) === false) {
-            $this->log('AOBP recording failed', [
+            $this->logSafely('AOBP recording failed', [
                 'record' => $record, 'instance' => $repeat_instance, 'field' => $field,
                 'message' => 'the server could not write a temporary file',
             ]);
@@ -224,7 +224,7 @@ class AobpIntegration extends AbstractExternalModule
                 );
             }
         } catch (Throwable $e) {
-            $this->log('AOBP recording failed', [
+            $this->logSafely('AOBP recording failed', [
                 'record'   => $record,
                 'instance' => $repeat_instance,
                 'field'    => $field,
@@ -235,7 +235,7 @@ class AobpIntegration extends AbstractExternalModule
             @unlink($tmp);
         }
 
-        $this->log('AOBP recording stored', [
+        $this->logSafely('AOBP recording stored', [
             'record'   => $record,
             'instance' => $repeat_instance,
             'field'    => $field,
@@ -251,6 +251,39 @@ class AobpIntegration extends AbstractExternalModule
             'bytes'    => strlen($xml),
             'sha256'   => hash('sha256', $xml),
         ];
+    }
+
+    /**
+     * Log, without letting the logging decide whether a measurement was filed.
+     *
+     * The framework refuses log() from an unauthenticated context unless
+     * config.json sets enable-no-auth-logging. This module renders on the
+     * survey page and nowhere else, so that is every call it makes: with the
+     * flag unset it has no account of itself at all, and an empty log is not
+     * evidence that nothing went wrong.
+     *
+     * Whether a refusal returns quietly or throws is the framework's business.
+     * What matters here is where this gets called from: once on the path that
+     * has already stored the file and is about to hand the page its doc id, and
+     * once inside a catch block that is carrying the only description of what
+     * went wrong.
+     *
+     * A page that does not receive that doc id posts the form's rendered
+     * emptiness back over the file it was never told about, and an empty file
+     * field is how REDCap deletes an edoc. So a measurement can be stored,
+     * attached, reported as failed and then removed on the next submit --
+     * because a log line could not be written.
+     *
+     * A log line is worth less than a measurement. Failures go to the PHP error
+     * log, which needs nothing from REDCap to accept them.
+     */
+    private function logSafely(string $message, array $params = []): void
+    {
+        try {
+            $this->log($message, $params);
+        } catch (Throwable $e) {
+            error_log('AOBP Integration could not log "' . $message . '": ' . $e->getMessage());
+        }
     }
 
     /** Somewhere to put the bytes for the length of one request. */

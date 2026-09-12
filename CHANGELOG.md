@@ -6,6 +6,43 @@ the version from the installed directory name, and a ZIP whose contents
 contradict its own name is the one mistake that reaches a production server and
 stays there.
 
+## 1.2.2 -- 2026-09-12
+
+The module can log, and a log that cannot be written no longer reaches the page.
+Nothing on an existing project needs changing.
+
+### The module logs
+
+From framework version 11 the framework refuses `log()` in an unauthenticated
+context unless `config.json` sets `enable-no-auth-logging`. This module renders
+on the survey page and nowhere else, so that was every call it made: a refusal
+or a failure went nowhere, and an empty log was not evidence that nothing had
+gone wrong. `config.json` sets it.
+
+It is a capability and not a policy. The framework reads it from the installed
+version's `config.json`, so it cannot be turned on from the Control Center or
+from a project.
+
+Entries appear under **External Modules -> View Logs** in the project's left
+menu. That is not REDCap's own **Logging** page, which records data changes and
+never shows a module's entries.
+
+Nothing a caller wrote reaches the log. Every value is a literal in the module
+or one of the context parameters the framework supplies.
+
+### Logging cannot cost a measurement
+
+Every log call in the endpoint goes through `logSafely()`. One that cannot be
+written goes to the PHP error log and the endpoint carries on, so the reply the
+page depends on is never a log's to withhold. A log line is worth less than a
+measurement.
+
+### Tests
+
+`test/guards.php` can make logging refuse the way the framework does, and checks
+that a stored recording is still reported as stored, carrying the doc id the
+form needs to keep the file attached across the submit.
+
 ## 1.2.1 -- 2026-09-08
 
 Two faults in the same dead end, both met by changing the measurement mode on
